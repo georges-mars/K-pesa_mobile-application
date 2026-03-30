@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.example.kpesa",
+    "sha256_cert_fingerprints": [
+      "0F:15:B2:52:18:EC:8F:93:C8:C3:69:0C:F6:92:5D:90:57:CA:C7:28:47:AF:87:83:CA:2C:2B:42:BA:A4:94:E8"
+    ]
+  }
+}]
