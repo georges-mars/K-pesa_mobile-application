@@ -5,6 +5,7 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/login_page.dart';
 import 'screens/sign_up_page.dart';
+import 'services/api_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +26,10 @@ void main() async {
       initialDerivUri = uri;
     }
   } catch (_) {}
+
+  // Force sign out on every cold start (when the app is opened after being completely closed/exited)
+  // This satisfies the security requirement without breaking the Binance/M-Pesa background app switching.
+  ApiService.logout();
 
   runApp(MyApp(initialDerivUri: initialDerivUri));
 }

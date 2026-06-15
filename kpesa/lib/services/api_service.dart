@@ -290,12 +290,12 @@ class ApiService {
 
   static Future<void> logout() async {
     final rt = await getRefreshToken();
+    await clearTokens(); // Clear immediately for security
     if (rt != null) {
       await _post('/auth/logout', {
         'refreshToken': rt,
       }).catchError((_) => http.Response('', 200));
     }
-    await clearTokens();
   }
 
   /// Initiate password reset. Returns null on success, error message on failure.
