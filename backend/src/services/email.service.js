@@ -34,7 +34,7 @@ async function sendOtpEmail(toEmail, otp) {
 
   try {
     await transporter.sendMail({
-      from:    `"K-PESA" <${process.env.SMTP_USER || process.env.EMAIL_FROM}>`,
+      from:    '"K-PESA Security" <otp@k-pesa.tech>',
       to:      toEmail,
       subject,
       html,
@@ -71,7 +71,7 @@ async function sendReferralEmail(toEmail, referralCode) {
 
   try {
     await transporter.sendMail({
-      from:    `"K-PESA" <${process.env.SMTP_USER || process.env.EMAIL_FROM || 'no-reply@k-pesa.tech'}>`,
+      from:    '"K-PESA" <no-reply@k-pesa.tech>',
       to:      toEmail,
       subject,
       html,
