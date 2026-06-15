@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DB-VIEWING</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>DB-VIEWING</h1>
+        <p>Simple database browser for your K-Pesa PostgreSQL tables</p>
+      </div>
+      <div class="health" id="healthBadge">Checking DB...</div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h2>Tables</h2>
+          <input id="tableSearch" type="text" placeholder="Search table..." />
+        </div>
+        <ul id="tableList"></ul>
+      </aside>
+
+      <section class="content">
+        <div class="panel controls">
+          <div class="control-row">
+            <label for="pageSize">Rows per page</label>
+            <select id="pageSize">
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </div>
+          <div class="control-row">
+            <label for="orderDirection">Order</label>
+            <select id="orderDirection">
+              <option value="desc" selected>Descending</option>
+              <option value="asc">Ascending</option>
+            </select>
+          </div>
+          <div class="control-row">
+            <button id="refreshBtn">Refresh</button>
+          </div>
+        </div>
+
+        <div class="panel summary" id="summaryPanel">
+          <div class="summary-item">
+            <span>Selected Table</span>
+            <strong id="summaryTable">-</strong>
+          </div>
+          <div class="summary-item">
+            <span>Total Rows</span>
+            <strong id="summaryTotalRows">-</strong>
+          </div>
+          <div class="summary-item">
+            <span>Columns</span>
+            <strong id="summaryColumns">-</strong>
+          </div>
+        </div>
+
+        <div class="panel table-panel">
+          <div class="table-header">
+            <h3 id="tableTitle">Select a table</h3>
+            <div class="pager">
+              <button id="prevBtn">&larr; Prev</button>
+              <span id="pageInfo">Page 1</span>
+              <button id="nextBtn">Next &rarr;</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table id="dataTable">
+              <thead id="tableHead"></thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

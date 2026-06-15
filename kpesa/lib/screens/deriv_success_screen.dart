@@ -69,16 +69,8 @@ class _DerivSuccessScreenState extends State<DerivSuccessScreen> {
               // Display full name on screen (all names for confirmation)
               final fullName = (auth['fullname'] ?? '').toString();
 
-              // But save only first + last name to database
-              final nameParts = fullName
-                  .split(' ')
-                  .where((s) => s.isNotEmpty)
-                  .toList();
-              final savedName = nameParts.length >= 2
-                  ? '${nameParts.first} ${nameParts.last}'
-                  : fullName;
-
               setState(() {
+
                 _name = fullName; // Show ALL names on screen
                 _email = (auth['email'] ?? '').toString();
                 _account = (auth['loginid'] ?? _account).toString();

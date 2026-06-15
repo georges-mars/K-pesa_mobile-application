@@ -21,7 +21,7 @@ const registerSchema = Joi.object({
   bankName:          Joi.string().allow('', null),
   bankAccountName:   Joi.string().allow('', null),
   bankAccountNumber: Joi.string().allow('', null),
-  affiliateCode:     Joi.string().allow('', null),
+  referral_code:     Joi.string().allow('', null),
 });
 
 const loginSchema = Joi.object({

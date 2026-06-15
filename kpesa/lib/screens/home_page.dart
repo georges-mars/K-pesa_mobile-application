@@ -25,6 +25,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   List<Map<String, dynamic>> _transactions = [];
   bool _loadingTx = true;
 
+  num? _toNum(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value;
+    return num.tryParse(value.toString().replaceAll(',', '').trim());
+  }
+
   @override
   void initState() {
     super.initState();
@@ -67,7 +73,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     setState(() {
       _userName = resolvedName;
       _applyBalances(balances);
-      _transactions = txList.cast<Map<String, dynamic>>();
+      _transactions = txList
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
       _loadingTx = false;
     });
 
@@ -94,7 +103,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     setState(() {
       _applyBalances(results[0] as Map<String, dynamic>?);
       _transactions = (results[1] as List<dynamic>)
-          .cast<Map<String, dynamic>>();
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
     });
   }
 
@@ -102,11 +113,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (balances == null) return;
     final deriv = balances['deriv'] as Map<String, dynamic>?;
     final mt5List = balances['mt5Accounts'] as List<dynamic>?;
-    final derivAmt = deriv?['balance'];
+    final derivAmt = _toNum(deriv?['balance']);
     _derivBalance = derivAmt != null
-        ? '${(derivAmt as num).toStringAsFixed(2)} ${deriv?['currency'] ?? 'USD'}'
+        ? '${derivAmt.toStringAsFixed(2)} ${deriv?['currency'] ?? 'USD'}'
         : '0.00 USD';
-    _mt5Accounts = mt5List?.cast<Map<String, dynamic>>() ?? [];
+    _mt5Accounts =
+        mt5List
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList() ??
+        [];
   }
 
   void _showNamePrompt() {
@@ -276,6 +292,31 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   // ── Navigation helpers (refresh data on return) ─────────────────────────────
 
+  Future<void> _openProfile() async {
+    await Navigator.push(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const ProfilePage(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          const begin = Offset(1.0, 0.0);
+          const end = Offset.zero;
+          final curve = Curves.easeOutQuart;
+          final tween = Tween(
+            begin: begin,
+            end: end,
+          ).chain(CurveTween(curve: curve));
+          return SlideTransition(
+            position: animation.drive(tween),
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 600),
+      ),
+    );
+    if (mounted) _refreshAll();
+  }
+
   Future<void> _openDeposit() async {
     await Navigator.push(
       context,
@@ -343,24 +384,36 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         : const Color.fromARGB(255, 245, 245, 245);
 
     return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24.0,
-              vertical: 16.0,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(textColor),
-                const SizedBox(height: 32),
-                _buildBalanceCard(isDark),
-                const SizedBox(height: 24),
-                _buildActionButtons(isDark),
-                const SizedBox(height: 32),
-                _buildTransactionsSection(cardBgColor, textColor, subtleColor),
-              ],
+      body: GestureDetector(
+        onHorizontalDragEnd: (details) {
+          final velocity = details.primaryVelocity ?? 0;
+          if (velocity < -350) {
+            _openProfile();
+          }
+        },
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24.0,
+                vertical: 16.0,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(textColor),
+                  const SizedBox(height: 32),
+                  _buildBalanceCard(isDark),
+                  const SizedBox(height: 24),
+                  _buildActionButtons(isDark),
+                  const SizedBox(height: 32),
+                  _buildTransactionsSection(
+                    cardBgColor,
+                    textColor,
+                    subtleColor,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -394,32 +447,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ],
         ),
         GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              PageRouteBuilder(
-                pageBuilder: (context, animation, secondaryAnimation) =>
-                    const ProfilePage(),
-                transitionsBuilder:
-                    (context, animation, secondaryAnimation, child) {
-                      const begin = Offset(1.0, 0.0);
-                      const end = Offset.zero;
-                      final curve = Curves.easeOutQuart;
-
-                      var tween = Tween(
-                        begin: begin,
-                        end: end,
-                      ).chain(CurveTween(curve: curve));
-
-                      return SlideTransition(
-                        position: animation.drive(tween),
-                        child: child,
-                      );
-                    },
-                transitionDuration: const Duration(milliseconds: 600),
-              ),
-            );
-          },
+          onTap: _openProfile,
           child: Container(
             width: 48,
             height: 48,
@@ -519,7 +547,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 const SizedBox(height: 8),
                 ..._mt5Accounts.map((acct) {
                   final login = acct['login']?.toString() ?? '—';
-                  final bal = acct['balance'] as num? ?? 0;
+                  final bal = _toNum(acct['balance']) ?? 0;
                   final cur = acct['currency'] as String? ?? 'USD';
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 4),
@@ -747,8 +775,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         final tx = _transactions[index];
         final type = tx['type'] as String? ?? '';
         final status = tx['status'] as String? ?? '';
-        final amountUsd = tx['amount_usd'] as num?;
-        final amountKes = tx['amount_kes'] as num?;
+        final amountUsd = _toNum(tx['amount_usd']);
+        final amountKes = _toNum(tx['amount_kes']);
         final createdAt = tx['created_at'] as String?;
         final dest = tx['destination_type'] as String? ?? '';
         final isDeposit = type == 'deposit';
@@ -773,91 +801,524 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             statusColor = Colors.orange;
         }
 
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            children: [
-              // Icon
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: (isDeposit ? _accentColor : Colors.orange).withValues(
-                    alpha: 0.12,
+        return InkWell(
+          onTap: () => _showTransactionDetails(tx),
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+            child: Row(
+              children: [
+                // Icon
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: (isDeposit ? _accentColor : Colors.orange).withValues(
+                      alpha: 0.12,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  borderRadius: BorderRadius.circular(10),
+                  child: Icon(
+                    isDeposit
+                        ? Icons.arrow_downward_rounded
+                        : Icons.arrow_upward_rounded,
+                    color: isDeposit ? _accentColor : Colors.orange,
+                    size: 20,
+                  ),
                 ),
-                child: Icon(
-                  isDeposit
-                      ? Icons.arrow_downward_rounded
-                      : Icons.arrow_upward_rounded,
-                  color: isDeposit ? _accentColor : Colors.orange,
-                  size: 20,
+                const SizedBox(width: 12),
+                // Details
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isDeposit
+                            ? 'Deposit to ${dest.isNotEmpty ? dest : 'Deriv'}'
+                            : 'Withdrawal to M-Pesa',
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        timeStr,
+                        style: TextStyle(color: subtleColor, fontSize: 12),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              // Details
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                // Amount + status
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      isDeposit
-                          ? 'Deposit to ${dest.isNotEmpty ? dest : 'Deriv'}'
-                          : 'Withdrawal to M-Pesa',
+                      amountUsd != null
+                          ? '\$${amountUsd.toStringAsFixed(2)}'
+                          : 'KES ${amountKes?.toStringAsFixed(0) ?? '—'}',
                       style: TextStyle(
                         color: textColor,
                         fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text(
-                      timeStr,
-                      style: TextStyle(color: subtleColor, fontSize: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        status,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ],
                 ),
-              ),
-              // Amount + status
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    amountUsd != null
-                        ? '\$${amountUsd.toStringAsFixed(2)}'
-                        : 'KES ${amountKes?.toStringAsFixed(0) ?? '—'}',
-                    style: TextStyle(
-                      color: textColor,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      status,
-                      style: TextStyle(
-                        color: statusColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+
+  void _showTransactionDetails(Map<String, dynamic> initialTx) {
+    Map<String, dynamic> tx = Map<String, dynamic>.from(initialTx);
+    bool isSyncing = false;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final isDark = Theme.of(ctx).brightness == Brightness.dark;
+            final bg = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+            final textColor = isDark ? Colors.white : Colors.black87;
+            final subtle = isDark ? Colors.white60 : Colors.black45;
+
+            final type = tx['type'] as String? ?? '';
+            final status = tx['status'] as String? ?? '';
+            final amountUsd = _toNum(tx['amount_usd']);
+            final amountKes = _toNum(tx['amount_kes']);
+            final rate = _toNum(tx['exchange_rate']);
+            final createdAt = tx['created_at'] as String?;
+            final dest = tx['destination_type'] as String? ?? '';
+            final failureReason = tx['failure_reason'] as String? ?? '';
+            final mpesaPhone = tx['mpesa_phone'] as String? ?? '';
+            final mpesaTxnId = tx['mpesa_transaction_id'] as String? ?? '';
+            final isDeposit = type == 'deposit';
+
+            // Format time
+            String timeStr = '';
+            if (createdAt != null) {
+              try {
+                final dt = DateTime.parse(createdAt).toLocal();
+                timeStr = DateFormat('MMMM d, yyyy h:mm a').format(dt);
+              } catch (_) {}
+            }
+
+            // Status design
+            Color statusColor;
+            IconData statusIcon;
+            String statusText = status.toUpperCase();
+            switch (status) {
+              case 'completed':
+                statusColor = _accentColor;
+                statusIcon = Icons.check_circle_rounded;
+                break;
+              case 'failed':
+                statusColor = Colors.red;
+                statusIcon = Icons.error_rounded;
+                break;
+              case 'cancelled':
+                statusColor = Colors.redAccent;
+                statusIcon = Icons.cancel_rounded;
+                break;
+              default:
+                statusColor = Colors.orange;
+                statusIcon = Icons.pending_rounded;
+                statusText = 'PENDING';
+                break;
+            }
+
+            final isPendingOrProcessing = ['pending', 'processing'].contains(status);
+
+            Future<void> checkStatus() async {
+              if (isSyncing) return;
+              setSheetState(() {
+                isSyncing = true;
+              });
+              try {
+                final result = await ApiService.getDepositStatus(tx['id']);
+                if (result != null) {
+                  setSheetState(() {
+                    tx = result;
+                  });
+                  _fetchData();
+                }
+              } catch (_) {}
+              if (ctx.mounted && mounted) {
+                setSheetState(() {
+                  isSyncing = false;
+                });
+              }
+            }
+
+            Future<void> retrySTKPush() async {
+              Navigator.pop(ctx); // Close details sheet first
+
+              final navigator = Navigator.of(context);
+              final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+              // Show a loading dialog
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (BuildContext context) {
+                  return const Center(
+                    child: CircularProgressIndicator(),
+                  );
+                },
+              );
+
+              try {
+                final res = await ApiService.initiateDeposit(
+                  amountKes: amountKes?.toDouble() ?? 0.0,
+                  destinationType: dest,
+                  mpesaPhone: mpesaPhone,
+                );
+
+                if (!mounted) return;
+                navigator.pop(); // Dismiss loading dialog
+
+                if (res != null) {
+                  final msg = res['message'] ?? 'STK Push initiated successfully.';
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text(msg),
+                      backgroundColor: _accentColor,
+                    ),
+                  );
+                  _fetchData(); // Reload transactions
+                } else {
+                  if (mounted) {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Failed to Retry'),
+                        content: const Text('Could not re-initiate STK Push. Please try again manually.'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                }
+              } catch (e) {
+                if (mounted) {
+                  navigator.pop(); // Dismiss loading dialog
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Error'),
+                      content: Text('An error occurred: $e'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('OK'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: bg,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(28),
+                  ),
+                ),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Drag handle
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 24),
+                        decoration: BoxDecoration(
+                          color: subtle.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Transaction Details',
+                          style: TextStyle(
+                            color: textColor,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (isPendingOrProcessing)
+                          IconButton(
+                            icon: isSyncing 
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.refresh),
+                            onPressed: checkStatus,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Amount Display
+                    Center(
+                      child: Column(
+                        children: [
+                          Text(
+                            amountUsd != null
+                                ? '\$${amountUsd.toStringAsFixed(2)}'
+                                : 'KES ${amountKes?.toStringAsFixed(0) ?? '—'}',
+                            style: TextStyle(
+                              color: textColor,
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          if (amountUsd != null && amountKes != null)
+                            Text(
+                              'KES ${amountKes.toStringAsFixed(0)}',
+                              style: TextStyle(
+                                color: subtle,
+                                fontSize: 16,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Status Badge
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(statusIcon, color: statusColor, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              statusText,
+                              style: TextStyle(
+                                color: statusColor,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Metadata table
+                    _buildDetailRow('Transaction Type', isDeposit ? 'Deposit' : 'Withdrawal', textColor, subtle),
+                    const Divider(height: 24),
+                    _buildDetailRow('Date', timeStr, textColor, subtle),
+                    const Divider(height: 24),
+                    if (isDeposit)
+                      _buildDetailRow('Destination', dest.toUpperCase(), textColor, subtle),
+                    if (isDeposit)
+                      const Divider(height: 24),
+                    if (rate != null)
+                      _buildDetailRow('Exchange Rate', '1 USD = ${rate.toStringAsFixed(2)} KES', textColor, subtle),
+                    if (rate != null)
+                      const Divider(height: 24),
+                    if (mpesaPhone.isNotEmpty)
+                      _buildDetailRow('M-Pesa Number', mpesaPhone, textColor, subtle),
+                    if (mpesaPhone.isNotEmpty)
+                      const Divider(height: 24),
+                    if (mpesaTxnId.isNotEmpty)
+                      _buildDetailRow('Receipt Number', mpesaTxnId, textColor, subtle),
+                    if (mpesaTxnId.isNotEmpty)
+                      const Divider(height: 24),
+
+                    // Error Section (if failed or cancelled)
+                    if ((status == 'failed' || status == 'cancelled') && failureReason.isNotEmpty) ...[
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.red.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Reason for Failure',
+                                    style: TextStyle(
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    failureReason,
+                                    style: TextStyle(
+                                      color: textColor.withValues(alpha: 0.8),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+
+                    // Action buttons
+                    if (isPendingOrProcessing) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton.icon(
+                          onPressed: checkStatus,
+                          icon: isSyncing 
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh, color: Colors.white),
+                          label: Text(
+                            isSyncing ? 'Checking...' : 'Check Status',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _accentColor,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                        ),
+                      ),
+                    ] else if ((status == 'failed' || status == 'cancelled') && isDeposit && mpesaPhone.isNotEmpty) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton.icon(
+                          onPressed: retrySTKPush,
+                          icon: const Icon(Icons.replay_rounded, color: Colors.white),
+                          label: const Text(
+                            'Retry STK Push',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _accentColor,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value, Color textColor, Color subtle) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: subtle,
+            fontSize: 13,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: textColor,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }

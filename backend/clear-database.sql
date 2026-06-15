@@ -13,6 +13,7 @@ TRUNCATE TABLE otps CASCADE;
 TRUNCATE TABLE payment_methods CASCADE;
 TRUNCATE TABLE users CASCADE;
 TRUNCATE TABLE encryption_keys CASCADE;
+TRUNCATE TABLE device_biometrics CASCADE;
 
 -- Re-enable foreign key checks
 SET session_replication_role = 'origin';
@@ -25,6 +26,8 @@ ALTER SEQUENCE refresh_tokens_id_seq RESTART WITH 1;
 ALTER SEQUENCE transactions_id_seq RESTART WITH 1;
 ALTER SEQUENCE affiliate_redemptions_id_seq RESTART WITH 1;
 ALTER SEQUENCE encryption_keys_id_seq RESTART WITH 1;
+ALTER SEQUENCE device_biometrics_id_seq RESTART WITH 1;
+
 
 -- Show confirmation
 SELECT 'All data cleared successfully!' AS result;

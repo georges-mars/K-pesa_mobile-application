@@ -47,5 +47,8 @@
 		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSFaceIDUsageDescription</key>
+		<string>We use Face ID to quickly and securely log you into your K-Pesa account.</string>
 	</dict>
 </plist>
+

@@ -14,9 +14,7 @@ class AuthStorage {
   const AuthStorage._();
   static const AuthStorage instance = AuthStorage._();
 
-  static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  static const _storage = FlutterSecureStorage();
 
   // ── Keys ──────────────────────────────────────────────────────────────────
   static const _kAccessToken = 'deriv_access_token';

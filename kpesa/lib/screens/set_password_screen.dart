@@ -2,16 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../models/signup_data.dart';
 import '../services/api_service.dart';
+import '../services/biometric_service.dart';
 import 'home_page.dart';
+
 
 class SetPasswordScreen extends StatefulWidget {
   final SignupData signupData;
-  final String? affiliateCode;
+  final String? referralCode;
 
   const SetPasswordScreen({
     super.key,
     required this.signupData,
-    this.affiliateCode,
+    this.referralCode,
   });
 
   @override
@@ -154,7 +156,7 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
       bankName: widget.signupData.bankName,
       bankAccountName: widget.signupData.bankAccountName,
       bankAccountNumber: widget.signupData.bankAccountNumber,
-      affiliateCode: widget.affiliateCode,
+      referralCode: widget.referralCode,
     );
 
     if (!mounted) return;
@@ -214,13 +216,17 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
                 borderRadius: BorderRadius.circular(20),
               ),
             ),
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(ctx).pop(); // close dialog
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const HomePage()),
-                (_) => false, // clear entire back stack
-              );
+              await _offerBiometricEnrollment(email);
+              if (mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const HomePage()),
+                  (_) => false, // clear entire back stack
+                );
+              }
             },
+
             child: const Text('Go to Home'),
           ),
         ],
@@ -572,4 +578,93 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
       ),
     );
   }
+
+  Future<void> _offerBiometricEnrollment(String email) async {
+    final available = await BiometricService.isBiometricAvailable();
+    if (!available) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Biometrics Not Available'),
+          content: const Text(
+            'Biometric authentication is not supported or not set up on this device. You can set it up later in your Profile settings.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enable Biometric Login?'),
+        content: const Text(
+          'Would you like to use your fingerprint or face to sign in next time?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Not now'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _accent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Enable'),
+          ),
+        ],
+      ),
+    );
+
+    if (accepted != true || !mounted) return;
+
+    // Verify biometrics locally first
+    final authenticated = await BiometricService.authenticate();
+    if (!mounted) return;
+    if (!authenticated) return;
+
+    final deviceId = await BiometricService.getDeviceId();
+    if (!mounted) return;
+    final deviceName = await BiometricService.getDeviceName();
+    if (!mounted) return;
+
+    final enrollError = await ApiService.enrollBiometric(
+      deviceId: deviceId,
+      deviceName: deviceName,
+    );
+
+    if (!mounted) return;
+
+    if (enrollError == null) {
+      await BiometricService.saveBiometricEmail(email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Biometric login enabled!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(enrollError),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 }
+
+

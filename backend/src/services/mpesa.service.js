@@ -10,6 +10,11 @@ const DARAJA_BASE = () =>
     ? 'https://api.safaricom.co.ke'
     : 'https://sandbox.safaricom.co.ke';
 
+function toDarajaMsisdn(phone) {
+  const cleaned = String(phone || '').trim();
+  return cleaned.startsWith('+') ? cleaned.slice(1) : cleaned;
+}
+
 // ── Access token cache ────────────────────────────────────────────────────────
 let cachedToken    = null;
 let tokenExpiresAt = 0;
@@ -51,6 +56,7 @@ async function getAccessToken() {
  */
 async function stkPush(phone, amountKes, reference) {
   const token     = await getAccessToken();
+  const msisdn    = toDarajaMsisdn(phone);
   const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
   const password  = Buffer.from(
     `${process.env.MPESA_SHORT_CODE}${process.env.MPESA_PASSKEY}${timestamp}`,
@@ -62,9 +68,9 @@ async function stkPush(phone, amountKes, reference) {
     Timestamp:         timestamp,
     TransactionType:   'CustomerPayBillOnline',
     Amount:            Math.ceil(amountKes),
-    PartyA:            phone,
+    PartyA:            msisdn,
     PartyB:            process.env.MPESA_SHORT_CODE,
-    PhoneNumber:       phone,
+    PhoneNumber:       msisdn,
     CallBackURL:       `${process.env.BASE_URL}/api/v1/callbacks/mpesa/stk`,
     AccountReference:  reference,
     TransactionDesc:   'K-PESA Deposit',
@@ -77,11 +83,26 @@ async function stkPush(phone, amountKes, reference) {
     signal:  AbortSignal.timeout(15000),
   });
 
-  const data = await res.json();
+  const bodyText = await res.text();
+  let data;
+  try {
+    data = JSON.parse(bodyText);
+  } catch {
+    data = null;
+  }
   logger.debug('STK Push response', { data });
 
-  if (data.ResponseCode !== '0') {
-    throw new Error(data.ResponseDescription || 'STK Push failed');
+  if (!res.ok || !data || data.ResponseCode !== '0') {
+    const message =
+      data?.errorMessage ||
+      data?.ResponseDescription ||
+      bodyText ||
+      'STK Push failed';
+    throw new Error(message);
+  }
+
+  if (!data.CheckoutRequestID) {
+    throw new Error('STK Push did not return CheckoutRequestID');
   }
 
   return { checkoutRequestId: data.CheckoutRequestID };
@@ -98,6 +119,7 @@ async function stkPush(phone, amountKes, reference) {
  */
 async function b2cPay(phone, amountKes, originatorId) {
   const token = await getAccessToken();
+  const msisdn = toDarajaMsisdn(phone);
 
   const payload = {
     OriginatorConversationID: originatorId,
@@ -106,7 +128,7 @@ async function b2cPay(phone, amountKes, originatorId) {
     CommandID:                'BusinessPayment',
     Amount:                   Math.floor(amountKes),
     PartyA:                   process.env.MPESA_SHORT_CODE,
-    PartyB:                   phone,
+    PartyB:                   msisdn,
     Remarks:                  'K-PESA Withdrawal',
     QueueTimeOutURL:          `${process.env.BASE_URL}/api/v1/callbacks/mpesa/b2c/timeout`,
     ResultURL:                `${process.env.BASE_URL}/api/v1/callbacks/mpesa/b2c/result`,
@@ -130,4 +152,48 @@ async function b2cPay(phone, amountKes, originatorId) {
   return { conversationId: data.ConversationID };
 }
 
-module.exports = { stkPush, b2cPay, getAccessToken };
+/**
+ * Query the status of an M-Pesa Express (STK Push) transaction.
+ * @param {string} checkoutRequestId
+ * @returns {Promise<object>}
+ */
+async function stkPushQuery(checkoutRequestId) {
+  const token     = await getAccessToken();
+  const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+  const password  = Buffer.from(
+    `${process.env.MPESA_SHORT_CODE}${process.env.MPESA_PASSKEY}${timestamp}`,
+  ).toString('base64');
+
+  const payload = {
+    BusinessShortCode: process.env.MPESA_SHORT_CODE,
+    Password:          password,
+    Timestamp:         timestamp,
+    CheckoutRequestID: checkoutRequestId,
+  };
+
+  const res = await fetch(`${DARAJA_BASE()}/mpesa/stkpushquery/v1/query`, {
+    method:  'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+    signal:  AbortSignal.timeout(15000),
+  });
+
+  const bodyText = await res.text();
+  let data;
+  try {
+    data = JSON.parse(bodyText);
+  } catch {
+    data = null;
+  }
+  
+  logger.debug('STK Push Query response', { checkoutRequestId, data });
+  
+  if (!res.ok || !data) {
+    const errorMsg = data?.errorMessage || bodyText || 'STK Query failed';
+    throw new Error(errorMsg);
+  }
+  
+  return data;
+}
+
+module.exports = { stkPush, b2cPay, stkPushQuery, getAccessToken };

@@ -3,6 +3,7 @@
 const express = require('express');
 const helmet  = require('helmet');
 const cors    = require('cors');
+const path    = require('path');
 
 const { generalLimiter } = require('./middleware/rateLimiter');
 const errorHandler        = require('./middleware/errorHandler');
@@ -16,6 +17,7 @@ const withdrawRoutes = require('./routes/withdraw.routes');
 const derivRoutes    = require('./routes/deriv.routes');
 const callbackRoutes  = require('./routes/callback.routes');
 const biometricRoutes = require('./routes/biometric.routes');
+const adminRoutes     = require('./routes/admin.routes');
 
 const app = express();
 
@@ -24,9 +26,10 @@ app.use(helmet());
 
 // ── CORS — allow requests from the Flutter app (any origin in dev) ────────────
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',')
-    : '*',
+  origin: (origin, callback) => {
+    // Dynamically allow any origin (including null for local files)
+    callback(null, true);
+  },
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
@@ -59,6 +62,10 @@ app.use(`${BASE}/withdraw`,  withdrawRoutes);
 app.use(`${BASE}/deriv`,     derivRoutes);
 app.use(`${BASE}/callbacks`, callbackRoutes);
 app.use(`${BASE}/auth/biometric`, biometricRoutes);
+app.use(`${BASE}/admin`,          adminRoutes);
+
+// ── Serve Admin Website ───────────────────────────────────────────────────────
+app.use('/admin-portal', express.static(path.join(__dirname, '../public')));
 
 // ── 404 catch-all ─────────────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));

@@ -23,11 +23,76 @@ class _WithdrawPageState extends State<WithdrawPage> {
   List<Map<String, dynamic>> _paymentMethods = [];
   bool _loadingMethods = true;
   String? _selectedMethodId;
+  bool _hasDerivLinked = false;
+  bool _hasBinanceLinked = false;
+  bool _hasMt5Account = false;
+
+  double _derivBalanceValue = 0.0;
+  double _mt5BalanceValue = 0.0;
+
+  double _parseDouble(dynamic val) {
+    if (val == null) return 0.0;
+    if (val is num) return val.toDouble();
+    return double.tryParse(val.toString()) ?? 0.0;
+  }
 
   @override
   void initState() {
     super.initState();
     _fetchPaymentMethods();
+    _fetchLinkedSources();
+  }
+
+  bool _isSourceEnabled(int index) {
+    // If neither Deriv nor Binance is linked, allow attempt (may still succeed)
+    final anyLinked = _hasDerivLinked || _hasBinanceLinked;
+    if (!anyLinked) return true;
+    
+    if (index == 0) return _hasDerivLinked; // Deriv
+    if (index == 1) return _hasDerivLinked; // MT5 depends on Deriv linkage
+    return _hasBinanceLinked; // Binance
+  }
+
+  int _firstEnabledSourceIndex() {
+    for (var i = 0; i < 3; i++) {
+      if (_isSourceEnabled(i)) return i;
+    }
+    return 0;
+  }
+
+  Future<void> _fetchLinkedSources() async {
+    final results = await Future.wait([
+      ApiService.getProfile(),
+      ApiService.getBalances(),
+    ]);
+    if (!mounted) return;
+    final profile = results[0];
+    final balances = results[1];
+    if (profile == null && balances == null) return;
+
+    final derivAccount = (profile?['deriv_account'] as String?)?.trim() ?? '';
+    final derivEmail = (profile?['deriv_email'] as String?)?.trim() ?? '';
+    final derivName = (profile?['deriv_name'] as String?)?.trim() ?? '';
+    final binanceId = (profile?['binance_id'] as String?)?.trim() ?? '';
+    
+    final derivMap = balances?['deriv'] as Map<String, dynamic>?;
+    final mt5Map = balances?['mt5'] as Map<String, dynamic>?;
+
+    setState(() {
+      _derivBalanceValue = _parseDouble(derivMap?['balance']);
+      _mt5BalanceValue = _parseDouble(mt5Map?['balance']);
+
+      _hasDerivLinked =
+          derivAccount.isNotEmpty ||
+          derivEmail.isNotEmpty ||
+          derivName.isNotEmpty ||
+          derivMap != null;
+      _hasBinanceLinked = binanceId.isNotEmpty;
+      _hasMt5Account = mt5Map != null;
+      if (!_isSourceEnabled(_selectedTab)) {
+        _selectedTab = _firstEnabledSourceIndex();
+      }
+    });
   }
 
   Future<void> _fetchPaymentMethods() async {
@@ -47,6 +112,7 @@ class _WithdrawPageState extends State<WithdrawPage> {
   }
 
   Future<void> _initiateWithdrawal() async {
+    if (!_isSourceEnabled(_selectedTab)) return;
     if (_selectedMethodId == null || _isInitiating) return;
     final method = _paymentMethods.firstWhere(
       (m) => m['id'] == _selectedMethodId,
@@ -75,13 +141,9 @@ class _WithdrawPageState extends State<WithdrawPage> {
     );
     if (!mounted) return;
     setState(() => _isInitiating = false);
-    if (result == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not initiate withdrawal. Please try again.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+    if (result == null || result.containsKey('error')) {
+      final errorMsg = result?['error'] as String? ?? 'Could not initiate withdrawal. Please try again.';
+      _showWithdrawErrorDialog(errorMsg);
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
@@ -249,7 +311,6 @@ class _WithdrawPageState extends State<WithdrawPage> {
           onPressed: (_selectedMethodId != null && !_loadingMethods)
               ? () {
                   setState(() => _isWithdrawDialogVisible = false);
-                  _initiateWithdrawal();
                 }
               : null,
           child: Text(
@@ -548,6 +609,7 @@ class _WithdrawPageState extends State<WithdrawPage> {
     );
   }
 
+  // ignore: unused_element
   void _showBinanceActionDialog() {
     showGeneralDialog(
       context: context,
@@ -697,7 +759,7 @@ class _WithdrawPageState extends State<WithdrawPage> {
     );
   }
 
-  void _showInsufficientBalanceDialog() {
+  void _showWithdrawErrorDialog(String reason) {
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -734,27 +796,27 @@ class _WithdrawPageState extends State<WithdrawPage> {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: _accent.withValues(alpha: 0.1),
+                            color: Colors.redAccent.withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
                             Icons.error_outline_rounded,
-                            color: _accent,
+                            color: Colors.redAccent,
                             size: 32,
                           ),
                         ),
                         const SizedBox(height: 20),
                         Text(
-                          'Error',
+                          'Cannot Initiate Withdrawal',
                           style: TextStyle(
                             color: textColor,
-                            fontSize: 22,
+                            fontSize: 20,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Insufficient balance. Please refresh your account or try switching to a different source (MT5 or Deriv).',
+                          reason,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: textColor.withValues(alpha: 0.8),
@@ -780,7 +842,7 @@ class _WithdrawPageState extends State<WithdrawPage> {
                         ),
                       ),
                       child: const Text(
-                        'Try again',
+                        'OK',
                         style: TextStyle(
                           color: _accent,
                           fontSize: 16,
@@ -813,8 +875,19 @@ class _WithdrawPageState extends State<WithdrawPage> {
     final usdVal = _usdAmount;
     final kesVal = _kesAmount;
     final isLimitReached = _showLimitError || kesVal >= 250000;
+
+    double availableBalance = 0.0;
+    if (_selectedTab == 0) availableBalance = _derivBalanceValue;
+    if (_selectedTab == 1) availableBalance = _mt5BalanceValue;
+
+    final hasSufficientBalance = _selectedTab == 2 || usdVal <= availableBalance;
+
     final canWithdraw =
-        (_selectedTab == 2 ? usdVal >= 10 : usdVal >= 5) && kesVal <= 250000;
+        _isSourceEnabled(_selectedTab) &&
+        (_selectedTab == 2 ? usdVal >= 10 : usdVal >= 5) &&
+        kesVal <= 250000 &&
+        usdVal > 0 &&
+        hasSufficientBalance;
 
     final scaffold = Scaffold(
       backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
@@ -855,6 +928,11 @@ class _WithdrawPageState extends State<WithdrawPage> {
               const SizedBox(height: 16),
 
               _buildSegmentedToggle(isDark, cardBg, textColor),
+              const SizedBox(height: 8),
+              Text(
+                'Only linked sources are active.',
+                style: TextStyle(color: subtleColor, fontSize: 12),
+              ),
 
               const SizedBox(height: 24),
 
@@ -961,12 +1039,14 @@ class _WithdrawPageState extends State<WithdrawPage> {
               Text(
                 isLimitReached
                     ? 'Maximum withdrawal amount is 250,000\nKES'
-                    : (_selectedTab == 2
-                          ? 'Minimum withdraw amount is 10 USD'
-                          : 'Available balance is 0.00 USD'),
+                    : (!hasSufficientBalance
+                          ? 'Insufficient balance. Available: \$${availableBalance.toStringAsFixed(2)} USD'
+                          : (_selectedTab == 2
+                                ? 'Minimum withdraw amount is 10 USD'
+                                : 'Available balance is \$${availableBalance.toStringAsFixed(2)} USD')),
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: isLimitReached ? Colors.redAccent : textColor,
+                  color: (isLimitReached || !hasSufficientBalance) ? Colors.redAccent : textColor,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                   height: 1.4,
@@ -997,22 +1077,7 @@ class _WithdrawPageState extends State<WithdrawPage> {
                   ),
                   onPressed: canWithdraw
                       ? () {
-                          if (_selectedTab == 0 || _selectedTab == 1) {
-                            _showInsufficientBalanceDialog();
-                          } else {
-                            final destination = [
-                              'Deriv',
-                              'MT5',
-                              'Binance',
-                            ][_selectedTab];
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Withdrawing \$${usdVal.toStringAsFixed(2)} USD from $destination',
-                                ),
-                              ),
-                            );
-                          }
+                          _initiateWithdrawal();
                         }
                       : null,
                   child: const Row(
@@ -1094,34 +1159,46 @@ class _WithdrawPageState extends State<WithdrawPage> {
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.max,
         children: List.generate(labels.length, (i) {
           final isActive = _selectedTab == i;
-          return GestureDetector(
-            onTap: () {
-              if (i == 1 && _selectedTab != 1) {
-                _showMT5LinkDialog();
-              } else if (i == 2 && _selectedTab != 2) {
-                _showBinanceActionDialog();
-              } else {
-                setState(() => _selectedTab = i);
-              }
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-              decoration: BoxDecoration(
-                color: isActive ? _accent : Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                labels[i],
-                style: TextStyle(
-                  color: isActive
-                      ? Colors.white
-                      : (isDark ? Colors.white60 : Colors.black54),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+          final isEnabled = _isSourceEnabled(i);
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                if (!isEnabled) return;
+                if (i == 1 && _selectedTab != 1) {
+                  if (_hasMt5Account) {
+                    setState(() => _selectedTab = i);
+                  } else {
+                    _showMT5LinkDialog();
+                  }
+                } else {
+                  setState(() => _selectedTab = i);
+                }
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: isActive ? _accent : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Text(
+                    labels[i],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isActive
+                          ? Colors.white
+                          : isEnabled
+                          ? (isDark ? Colors.white60 : Colors.black54)
+                          : (isDark ? Colors.white30 : Colors.black26),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),

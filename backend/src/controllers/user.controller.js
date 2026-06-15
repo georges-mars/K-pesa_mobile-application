@@ -49,7 +49,12 @@ async function setDefaultPaymentMethod(req, res, next) {
 async function getBalances(req, res, next) {
   try {
     const balances = await derivService.getBalances(req.user.id);
-    res.json(balances);
+    res.json({
+      ...balances,
+      appConfig: {
+        minDepositUsd: Number(process.env.MIN_DEPOSIT_USD || 5),
+      },
+    });
   } catch (err) { next(err); }
 }
 
@@ -66,6 +71,39 @@ async function listTransactions(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function verifyPassword(req, res, next) {
+  try {
+    const { password } = req.body;
+    const isValid = await userService.verifyPassword(req.user.id, password);
+    if (!isValid) {
+      return res.status(400).json({ error: 'Incorrect current password.' });
+    }
+    res.json({ message: 'Password verified successfully.' });
+  } catch (err) { next(err); }
+}
+
+async function changePassword(req, res, next) {
+  try {
+    const { verificationToken, newPassword } = req.body;
+    await userService.changePassword(req.user.id, verificationToken, newPassword);
+    res.json({ message: 'Password changed successfully.' });
+  } catch (err) { next(err); }
+}
+
+async function getEarnings(req, res, next) {
+  try {
+    const earningsData = await userService.getEarnings(req.user.id);
+    res.json(earningsData);
+  } catch (err) { next(err); }
+}
+
+async function getReferralProfile(req, res, next) {
+  try {
+    const data = await userService.getReferralProfile(req.user.id);
+    res.json(data);
+  } catch (err) { next(err); }
+}
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -75,4 +113,8 @@ module.exports = {
   setDefaultPaymentMethod,
   getBalances,
   listTransactions,
+  verifyPassword,
+  changePassword,
+  getEarnings,
+  getReferralProfile,
 };

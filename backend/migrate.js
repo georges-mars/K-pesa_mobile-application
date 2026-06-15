@@ -10,6 +10,7 @@ require('dotenv').config();
 const { Pool } = require('pg');
 const fs   = require('fs');
 const path = require('path');
+const resolveDbSsl = require('./src/config/db-ssl');
 
 const pool = new Pool({
   host:     process.env.DB_HOST,
@@ -17,7 +18,7 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   user:     process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: resolveDbSsl(),
 });
 
 async function migrate() {

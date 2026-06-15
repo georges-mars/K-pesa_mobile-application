@@ -10,9 +10,7 @@ class BiometricService {
   BiometricService._();
 
   static final _auth = LocalAuthentication();
-  static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  static const _storage = FlutterSecureStorage();
 
   static const _kBiometricEmail = 'kp_biometric_email';
 
@@ -40,12 +38,14 @@ class BiometricService {
     try {
       return await _auth.authenticate(
         localizedReason: 'Authenticate to sign in to K-Pesa',
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: true,
-        ),
+        persistAcrossBackgrounding: true,
+        biometricOnly: true,
       );
     } on PlatformException {
+      return false;
+    } on LocalAuthException {
+      return false;
+    } catch (e) {
       return false;
     }
   }

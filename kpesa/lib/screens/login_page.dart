@@ -39,11 +39,15 @@ class _LoginPageState extends State<LoginPage> {
     setState(() {
       _biometricAvailable = available;
       _biometricEmail = email;
+      if (email != null && email.isNotEmpty) {
+        _emailController.text = email;
+      }
     });
 
-    // Auto-trigger biometric prompt if enrolled
-    if (available && email != null && email.isNotEmpty) {
-      _biometricLogin();
+    if (available && email != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _startAutoBiometricLogin();
+      });
     }
   }
 
@@ -181,11 +185,9 @@ class _LoginPageState extends State<LoginPage> {
       style: OutlinedButton.styleFrom(
         side: BorderSide(color: _accentColor),
         padding: const EdgeInsets.symmetric(vertical: 14.0),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
       ),
-      onPressed: _isLoading ? null : _biometricLogin,
+      onPressed: _isLoading ? null : _startAutoBiometricLogin,
       icon: Icon(Icons.fingerprint, color: _accentColor, size: 28),
       label: Text(
         'Sign in with Biometrics',
@@ -196,39 +198,100 @@ class _LoginPageState extends State<LoginPage> {
 
   // ── Biometric login flow ──────────────────────────────────────────────────
 
-  Future<void> _biometricLogin() async {
-    setState(() => _isLoading = true);
+  Future<void> _startAutoBiometricLogin() async {
+    final navigator = Navigator.of(context);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    bool dialogClosed = false;
+
+    // Show custom dialog waiting for fingerprint
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        final textColor = isDark ? Colors.white : Colors.black87;
+        
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: _accentColor.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.fingerprint, color: _accentColor, size: 36),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Biometric Authentication',
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Waiting for fingerprint to log in...',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            TextButton(
+              onPressed: () {
+                dialogClosed = true;
+                Navigator.pop(ctx);
+              },
+              child: const Text('Cancel', style: TextStyle(fontSize: 16)),
+            ),
+          ],
+        );
+      },
+    );
+
     try {
       final authenticated = await BiometricService.authenticate();
-      if (!authenticated) {
-        if (mounted) setState(() => _isLoading = false);
-        return;
+      if (dialogClosed) return;
+
+      if (mounted) {
+        navigator.pop(); // Dismiss custom dialog
       }
 
-      final deviceId = await BiometricService.getDeviceId();
-      final error = await ApiService.biometricLogin(deviceId);
-      if (!mounted) return;
+      if (authenticated) {
+        setState(() => _isLoading = true);
+        final deviceId = await BiometricService.getDeviceId();
+        final error = await ApiService.biometricLogin(deviceId);
+        if (!mounted) return;
 
-      if (error != null) {
-        setState(() => _isLoading = false);
-        // Device might have been revoked server-side
-        if (error.contains('not enrolled')) {
-          await BiometricService.clearBiometricEmail();
-          setState(() => _biometricEmail = null);
+        if (error != null) {
+          setState(() => _isLoading = false);
+          if (error.contains('not enrolled')) {
+            await BiometricService.clearBiometricEmail();
+            if (mounted) setState(() => _biometricEmail = null);
+          }
+          scaffoldMessenger.showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red),
+          );
+        } else {
+          navigator.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HomePage()),
+            (_) => false,
+          );
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error), backgroundColor: Colors.red),
-        );
-        return;
       }
-
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const HomePage()),
-        (_) => false,
-      );
     } catch (_) {
-      if (mounted) setState(() => _isLoading = false);
+      if (!dialogClosed && mounted) {
+        navigator.pop();
+      }
     }
   }
 
@@ -278,16 +341,27 @@ class _LoginPageState extends State<LoginPage> {
           borderRadius: BorderRadius.circular(30),
           borderSide: BorderSide(color: _accentColor),
         ),
-        suffixIcon: IconButton(
-          icon: Icon(
-            _obscurePassword ? Icons.visibility_off : Icons.visibility,
-            color: subtleColor,
-          ),
-          onPressed: () {
-            setState(() {
-              _obscurePassword = !_obscurePassword;
-            });
-          },
+        suffixIcon: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_biometricAvailable && _biometricEmail != null)
+              IconButton(
+                icon: Icon(Icons.fingerprint, color: _accentColor),
+                onPressed: _isLoading ? null : _startAutoBiometricLogin,
+              ),
+            IconButton(
+              icon: Icon(
+                _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                color: subtleColor,
+              ),
+              onPressed: () {
+                setState(() {
+                  _obscurePassword = !_obscurePassword;
+                });
+              },
+            ),
+            const SizedBox(width: 8),
+          ],
         ),
       ),
     );
@@ -347,8 +421,7 @@ class _LoginPageState extends State<LoginPage> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: _accentColor),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Enable',
-                style: TextStyle(color: Colors.white)),
+            child: const Text('Enable', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),

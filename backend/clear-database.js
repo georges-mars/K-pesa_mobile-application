@@ -51,6 +51,9 @@ async function clearDatabase() {
     await pool.query('TRUNCATE TABLE encryption_keys CASCADE');
     console.log('✓ Cleared encryption_keys');
 
+    await pool.query('TRUNCATE TABLE device_biometrics CASCADE');
+    console.log('✓ Cleared device_biometrics');
+
     // Re-enable foreign key checks
     await pool.query("SET session_replication_role = 'origin'");
 
@@ -62,6 +65,8 @@ async function clearDatabase() {
     await pool.query('ALTER SEQUENCE transactions_id_seq RESTART WITH 1');
     await pool.query('ALTER SEQUENCE affiliate_redemptions_id_seq RESTART WITH 1');
     await pool.query('ALTER SEQUENCE encryption_keys_id_seq RESTART WITH 1');
+    await pool.query('ALTER SEQUENCE device_biometrics_id_seq RESTART WITH 1');
+
     console.log('✓ Reset ID sequences');
 
     console.log('\n✅ All data cleared successfully!\n');

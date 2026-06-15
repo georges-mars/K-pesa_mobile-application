@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>K-PESA | Admin Referral Portal</title>
+  <style>
+    :root {
+      --primary: rgb(55, 194, 21);
+      --primary-hover: rgb(46, 163, 17);
+      --primary-glow: rgba(55, 194, 21, 0.15);
+      --bg: #131313;
+      --card-bg: #1E1E1E;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --text: #ffffff;
+      --text-muted: rgba(255, 255, 255, 0.7);
+      --danger: #ff444f;
+      --danger-bg: rgba(255, 68, 79, 0.1);
+      --success: #37c215;
+      --success-bg: rgba(55, 194, 21, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Auth View */
+    #auth-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      padding: 20px;
+    }
+
+    .auth-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 32px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    .auth-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 24px;
+      text-align: center;
+      color: var(--primary);
+    }
+
+    /* Main View Layout */
+    #main-container {
+      display: none;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border-color);
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .header-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: bold;
+      font-size: 18px;
+    }
+
+    .logo-badge {
+      background: var(--primary);
+      color: #000;
+      padding: 4px 8px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .logout-btn {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+
+    .logout-btn:hover {
+      color: var(--text);
+      border-color: var(--text);
+    }
+
+    .content-area {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      gap: 16px;
+      padding: 16px;
+    }
+
+    /* Section 1: User List panel */
+    .panel-users {
+      flex: 7;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-title {
+      font-size: 18px;
+      font-weight: 600;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .refresh-icon-btn {
+      background: none;
+      border: none;
+      color: var(--primary);
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .table-container {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    th {
+      color: var(--text-muted);
+      font-weight: 500;
+      position: sticky;
+      top: 0;
+      background: var(--card-bg);
+      z-index: 2;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge-config {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    .badge-config.active {
+      background: var(--success-bg);
+      color: var(--success);
+    }
+
+    .badge-config.inactive {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+    }
+
+    .btn-action {
+      background: var(--primary);
+      color: #000;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .btn-action:hover {
+      background: var(--primary-hover);
+    }
+
+    /* Section 2: Form panel */
+    .panel-form {
+      flex: 5;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      max-width: 480px;
+    }
+
+    .form-content {
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    input[type="date"],
+    select {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--primary);
+    }
+
+    .delivery-radio-group {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      padding: 4px 0;
+    }
+
+    .delivery-radio-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .delivery-radio-label input {
+      accent-color: var(--primary);
+    }
+
+    .conditional-group {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px dashed var(--border-color);
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .form-note {
+      font-size: 11px;
+      color: var(--primary);
+      background: var(--primary-glow);
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(55, 194, 21, 0.2);
+    }
+
+    .btn-submit {
+      background: var(--primary);
+      color: #000;
+      border: none;
+      padding: 12px;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-submit:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* OTP Verification Area */
+    .otp-verification-container {
+      background: rgba(55, 194, 21, 0.03);
+      border: 1px solid rgba(55, 194, 21, 0.2);
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 12px;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .otp-inputs-row {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    .otp-digit-field {
+      width: 42px;
+      height: 46px;
+      text-align: center;
+      font-size: 20px;
+      font-weight: bold;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      background: rgba(255, 255, 255, 0.05);
+      color: #fff;
+      outline: none;
+    }
+
+    .otp-digit-field:focus {
+      border-color: var(--primary);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    /* Error and Success states */
+    .validation-error {
+      font-size: 11px;
+      color: var(--danger);
+      margin-top: 2px;
+    }
+
+    .global-message {
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+
+    .global-message.error {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border: 1px solid rgba(255, 68, 79, 0.2);
+    }
+
+    .global-message.success {
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid rgba(55, 194, 21, 0.2);
+    }
+
+    /* Loading Spinner */
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(0, 0, 0, 0.1);
+      border-top-color: #000;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Mobile Responsive styling */
+    @media (max-width: 1024px) {
+      .content-area {
+        flex-direction: column;
+        overflow-y: auto;
+      }
+      #main-container {
+        height: auto;
+      }
+      .panel-users, .panel-form {
+        flex: none;
+        max-width: none;
+      }
+      .table-container {
+        max-height: 400px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Auth View -->
+  <div id="auth-container">
+    <div class="auth-card">
+      <div class="auth-title">K-PESA ADMIN LOGIN</div>
+      <div class="global-message error" id="auth-error" style="margin-bottom: 16px;"></div>
+      <form id="auth-form" onsubmit="handleLogin(event)">
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label>Email Address</label>
+          <input type="text" id="auth-email" required placeholder="admin@k-pesa.tech">
+        </div>
+        <div class="form-group" style="margin-bottom: 24px;">
+          <label>Password</label>
+          <input type="password" id="auth-password" required placeholder="••••••••">
+        </div>
+        <button type="submit" class="btn-submit" id="auth-submit-btn" style="width: 100%;">
+          <span>Login</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main Portal View -->
+  <div id="main-container">
+    <header>
+      <div class="header-logo">
+        <span>K-PESA</span>
+        <span class="logo-badge">Admin Portal</span>
+      </div>
+      <button class="logout-btn" onclick="handleLogout()">Sign Out</button>
+    </header>
+
+    <div class="content-area">
+      <!-- Section 1: User List -->
+      <div class="panel-users">
+        <div class="panel-title">
+          <span>Registered Users</span>
+          <button class="refresh-icon-btn" onclick="fetchUsers()">
+            <span>↻ Refresh</span>
+          </button>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Referral Code</th>
+                <th>Referred By</th>
+                <th>Earnings</th>
+                <th>Config Active</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 2: Form Panel -->
+      <div class="panel-form">
+        <div class="panel-title">Referral Configuration</div>
+        <form class="form-content" id="referral-form" onsubmit="handleInitiate(event)">
+          <input type="hidden" id="form-user-id">
+
+          <div class="global-message error" id="form-error"></div>
+          <div class="global-message success" id="form-success"></div>
+
+          <!-- User selection summary -->
+          <div class="form-group" style="opacity: 0.8;">
+            <label>Target User</label>
+            <input type="text" id="form-target-name-email" readonly style="background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.05); color: var(--text-muted);">
+          </div>
+
+          <!-- Custom Code -->
+          <div class="form-group">
+            <label for="form-custom-code">Custom Referral Code</label>
+            <input type="text" id="form-custom-code" required placeholder="e.g. PARTNER70">
+            <div class="validation-error" id="err-custom-code"></div>
+          </div>
+
+          <!-- Recipient email and phone inputs -->
+          <div class="form-group">
+            <label for="form-recipient-email">Recipient Email</label>
+            <input type="text" id="form-recipient-email" placeholder="e.g. partner@gmail.com" oninput="handleContactInput('email')">
+            <div class="validation-error" id="err-email"></div>
+          </div>
+
+          <div class="form-group">
+            <label for="form-recipient-phone">Recipient Phone Number</label>
+            <input type="text" id="form-recipient-phone" placeholder="e.g. +254712345678" oninput="handleContactInput('phone')">
+            <div class="validation-error" id="err-phone"></div>
+          </div>
+
+          <!-- Delivery Method -->
+          <div class="form-group">
+            <label>Delivery Method</label>
+            <div class="delivery-radio-group">
+              <label class="delivery-radio-label">
+                <input type="radio" name="deliveryMethod" value="email" id="delivery-method-email" checked>
+                <span>Email</span>
+              </label>
+              <label class="delivery-radio-label">
+                <input type="radio" name="deliveryMethod" value="sms" id="delivery-method-sms">
+                <span>SMS</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Revenue Division Type -->
+          <div class="form-group">
+            <label for="form-division-type">Revenue Division Type</label>
+            <select id="form-division-type" onchange="toggleDivisionTypeFields()">
+              <option value="flat_with_expiry_amount">Flat Reward with Earnings Expiry</option>
+              <option value="flat_with_expiry_date">Flat Reward with Date Expiry</option>
+              <option value="fixed_split">Fixed Split (30/70)</option>
+            </select>
+          </div>
+
+          <!-- Conditional Fields Container -->
+          <div class="conditional-group" id="conditional-fields-container">
+            <!-- Rendered dynamically -->
+          </div>
+
+          <!-- Send Invite Button -->
+          <button type="submit" class="btn-submit" id="submit-btn" style="margin-top: 8px;">
+            <span>Generate & Send Invite</span>
+          </button>
+        </form>
+
+        <!-- Inline OTP Verification container -->
+        <div class="otp-verification-container" id="otp-container">
+          <label style="text-align: center; margin-bottom: 8px;">Enter 6-Digit OTP</label>
+          <div class="otp-inputs-row">
+            <input type="text" maxlength="1" class="otp-digit-field" oninput="handleOtpInput(this, 0)" id="otp-0">
+            <input type="text" maxlength="1" class="otp-digit-field" oninput="handleOtpInput(this, 1)" id="otp-1">
+            <input type="text" maxlength="1" class="otp-digit-field" oninput="handleOtpInput(this, 2)" id="otp-2">
+            <input type="text" maxlength="1" class="otp-digit-field" oninput="handleOtpInput(this, 3)" id="otp-3">
+            <input type="text" maxlength="1" class="otp-digit-field" oninput="handleOtpInput(this, 4)" id="otp-4">
+            <input type="text" maxlength="1" class="otp-digit-field" oninput="handleOtpInput(this, 5)" id="otp-5">
+          </div>
+          <div class="validation-error" id="err-otp" style="text-align: center;"></div>
+          <button type="button" class="btn-submit" onclick="handleConfirmOtp()" id="confirm-otp-btn" style="margin-top: 10px;">
+            <span>Confirm Change</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.protocol === 'file:' 
+      ? 'https://85de-41-89-227-171.ngrok-free.app/api/v1' 
+      : '/api/v1';
+    let currentRequestId = null;
+
+    // Run startup
+    window.addEventListener('DOMContentLoaded', () => {
+      showMainView();
+    });
+
+    function showMainView() {
+      const authCard = document.getElementById('auth-container');
+      if (authCard) authCard.style.display = 'none';
+      document.getElementById('main-container').style.display = 'flex';
+      toggleDivisionTypeFields();
+      fetchUsers();
+    }
+
+    // Logout Handler
+    function handleLogout() {
+      window.location.reload();
+    }
+
+    // Fetch users list
+    async function fetchUsers() {
+      try {
+        const response = await fetch(`${API_BASE}/admin/referral/users`);
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Unauthorized access');
+          return;
+        }
+          return;
+        }
+        const users = await response.json();
+        renderUsers(users);
+      } catch (err) {
+        console.error('Failed to fetch users:', err);
+      }
+    }
+
+    function renderUsers(users) {
+      const tbody = document.getElementById('users-tbody');
+      tbody.innerHTML = '';
+      users.forEach(u => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="font-weight: 500;">${escapeHtml(u.name || 'Unnamed')}</td>
+          <td>${escapeHtml(u.email)}</td>
+          <td>${escapeHtml(u.phone || 'None')}</td>
+          <td><span style="font-family: monospace; letter-spacing: 0.5px; background: rgba(255,255,255,0.06); padding: 4px 8px; border-radius: 6px; font-weight: 600;">${escapeHtml(u.referral_code)}</span></td>
+          <td>${escapeHtml(u.referred_by || 'None')}</td>
+          <td style="font-weight: 600; color: var(--primary);">KES ${u.referral_earnings}</td>
+          <td>
+            <span class="badge-config ${u.has_active_config ? 'active' : 'inactive'}">
+              ${u.has_active_config ? 'Active' : 'Inactive'}
+            </span>
+          </td>
+          <td>
+            <button class="btn-action" onclick="populateForm('${u.id}', '${escapeHtml(u.name || 'User')}', '${escapeHtml(u.email)}', '${escapeHtml(u.phone || '')}')">
+              Configure
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Auto-select radio buttons based on email or phone typing
+    function handleContactInput(type) {
+      const emailVal = document.getElementById('form-recipient-email').value.trim();
+      const phoneVal = document.getElementById('form-recipient-phone').value.trim();
+      
+      if (type === 'email' && emailVal.length > 0) {
+        document.getElementById('delivery-method-email').checked = true;
+      } else if (type === 'phone' && phoneVal.length > 0) {
+        document.getElementById('delivery-method-sms').checked = true;
+      }
+    }
+
+    // Populate the Section 2 form from selected row
+    function populateForm(id, name, email, phone) {
+      document.getElementById('form-user-id').value = id;
+      document.getElementById('form-target-name-email').value = `${name} (${email})`;
+      document.getElementById('form-recipient-email').value = email;
+      document.getElementById('form-recipient-phone').value = phone;
+
+      // Reset form states
+      document.getElementById('form-error').style.display = 'none';
+      document.getElementById('form-success').style.display = 'none';
+      document.getElementById('otp-container').style.display = 'none';
+      clearErrors();
+
+      // Auto-select delivery method
+      if (email) {
+        document.getElementById('delivery-method-email').checked = true;
+      } else if (phone) {
+        document.getElementById('delivery-method-sms').checked = true;
+      }
+
+      // Scroll to configuration panel if on mobile
+      document.querySelector('.panel-form').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Toggle conditional fields depending on divisionType
+    function toggleDivisionTypeFields() {
+      const type = document.getElementById('form-division-type').value;
+      const container = document.getElementById('conditional-fields-container');
+      container.innerHTML = '';
+
+      if (type === 'flat_with_expiry_amount') {
+        container.innerHTML = `
+          <div class="form-group">
+            <label>Reward Distribution %</label>
+            <input type="number" step="0.01" id="form-reward-value" required placeholder="e.g. 50.00" value="50.00">
+            <div class="validation-error" id="err-reward-value"></div>
+          </div>
+          <div class="form-group">
+            <label>Total Earnings Limit (KES)</label>
+            <input type="number" step="0.01" id="form-expiry-amount" placeholder="e.g. 10000.00">
+            <div class="validation-error" id="err-expiry-amount"></div>
+          </div>
+        `;
+      } else if (type === 'flat_with_expiry_date') {
+        container.innerHTML = `
+          <div class="form-group">
+            <label>Reward Value (KES)</label>
+            <input type="number" step="0.01" id="form-reward-value" required placeholder="e.g. 50.00" value="50.00">
+            <div class="validation-error" id="err-reward-value"></div>
+          </div>
+          <div class="form-group">
+            <label>Expiry Date</label>
+            <input type="date" id="form-expiry-date" required onkeydown="return false">
+            <div class="validation-error" id="err-expiry-date"></div>
+          </div>
+        `;
+      } else if (type === 'fixed_split') {
+        container.innerHTML = `
+          <div class="form-note">
+            Split is fixed at 30% user / 70% platform.
+          </div>
+          <div class="form-group">
+            <label>Amount Cap KES</label>
+            <input type="number" step="0.01" id="form-fixed-split-cap" required placeholder="e.g. 5000.00">
+            <div class="validation-error" id="err-fixed-split-cap"></div>
+          </div>
+        `;
+      }
+    }
+
+    // OTP Digit handling: shift focus
+    function handleOtpInput(input, index) {
+      if (input.value.length === 1 && index < 5) {
+        document.getElementById(`otp-${index + 1}`).focus();
+      }
+    }
+
+    function clearErrors() {
+      document.querySelectorAll('.validation-error').forEach(e => e.innerText = '');
+    }
+
+    // Form submission helper
+    async function handleInitiate(event) {
+      event.preventDefault();
+      clearErrors();
+      document.getElementById('form-error').style.display = 'none';
+      document.getElementById('form-success').style.display = 'none';
+
+      const userId = document.getElementById('form-user-id').value;
+      const customCode = document.getElementById('form-custom-code').value.trim();
+      const recipientEmail = document.getElementById('form-recipient-email').value.trim();
+      const recipientPhone = document.getElementById('form-recipient-phone').value.trim();
+      const deliveryMethod = document.querySelector('input[name="deliveryMethod"]:checked').value;
+      const divisionType = document.getElementById('form-division-type').value;
+
+      if (!userId) {
+        showFormError('Please select a user from the table first.');
+        return;
+      }
+
+      // Validate at least one contact method filled
+      if (!recipientEmail && !recipientPhone) {
+        document.getElementById('err-email').innerText = 'Either email or phone number must be filled.';
+        document.getElementById('err-phone').innerText = 'Either email or phone number must be filled.';
+        return;
+      }
+
+      // Gather conditional fields
+      let rewardValue = null;
+      let expiryAmount = null;
+      let expiryDate = null;
+      let fixedSplitCap = null;
+      let splitPercentageUser = null;
+      let splitPercentageus = null;
+
+      if (divisionType === 'flat_with_expiry_amount') {
+        rewardValue = document.getElementById('form-reward-value').value;
+        expiryAmount = document.getElementById('form-expiry-amount').value || null;
+      } else if (divisionType === 'flat_with_expiry_date') {
+        rewardValue = document.getElementById('form-reward-value').value;
+        expiryDate = document.getElementById('form-expiry-date').value;
+      } else if (divisionType === 'fixed_split') {
+        splitPercentageUser = 30.00;
+        splitPercentageus = 70.00;
+        fixedSplitCap = document.getElementById('form-fixed-split-cap').value;
+      }
+
+      const btn = document.getElementById('submit-btn');
+      setLoading(btn, true);
+
+      try {
+        const response = await fetch(`${API_BASE}/admin/referral/create`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            userId,
+            customCode,
+            divisionType,
+            rewardValue,
+            splitPercentageUser,
+            splitPercentageus,
+            expiryAmount,
+            expiryDate,
+            fixedSplitCap,
+            deliveryMethod,
+            destination: deliveryMethod === 'email' ? recipientEmail : recipientPhone
+          })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to initiate change request.');
+        }
+
+        currentRequestId = data.requestId;
+        
+        // Show OTP block
+        document.getElementById('otp-container').style.display = 'flex';
+        document.getElementById('otp-0').focus();
+        showFormSuccess('OTP request dispatched successfully. Please verify to confirm.');
+      } catch (err) {
+        showFormError(err.message);
+      } finally {
+        setLoading(btn, false, 'Generate & Send Invite');
+      }
+    }
+
+    // Confirm OTP submit
+    async function handleConfirmOtp() {
+      document.getElementById('err-otp').innerText = '';
+      
+      let otp = '';
+      for (let i = 0; i < 6; i++) {
+        otp += document.getElementById(`otp-${i}`).value.trim();
+      }
+
+      if (otp.length !== 6 || isNaN(otp)) {
+        document.getElementById('err-otp').innerText = 'Please enter a valid 6-digit OTP code.';
+        return;
+      }
+
+      const btn = document.getElementById('confirm-otp-btn');
+      setLoading(btn, true);
+
+      try {
+        const response = await fetch(`${API_BASE}/admin/referral/verify-otp`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ requestId: currentRequestId, otp })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Invalid OTP code.');
+        }
+
+        showFormSuccess('Referral code and configuration applied successfully!');
+        
+        // Reset inputs
+        document.getElementById('referral-form').reset();
+        document.getElementById('form-user-id').value = '';
+        document.getElementById('otp-container').style.display = 'none';
+        for (let i = 0; i < 6; i++) {
+          document.getElementById(`otp-${i}`).value = '';
+        }
+
+        // Reload user list
+        fetchUsers();
+      } catch (err) {
+        document.getElementById('err-otp').innerText = err.message;
+      } finally {
+        setLoading(btn, false, 'Confirm Change');
+      }
+    }
+
+    function showFormError(msg) {
+      const el = document.getElementById('form-error');
+      el.innerText = msg;
+      el.style.display = 'block';
+    }
+
+    function showFormSuccess(msg) {
+      const el = document.getElementById('form-success');
+      el.innerText = msg;
+      el.style.display = 'block';
+    }
+
+    function setLoading(button, isLoading, text) {
+      if (isLoading) {
+        button.disabled = true;
+        button.innerHTML = `<div class="spinner"></div> <span>Processing...</span>`;
+      } else {
+        button.disabled = false;
+        button.innerHTML = `<span>${text}</span>`;
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+  </script>
+</body>
+</html>

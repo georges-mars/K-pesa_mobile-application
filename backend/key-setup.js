@@ -28,6 +28,7 @@ require('dotenv').config();
 const crypto     = require('crypto');
 const { Pool }   = require('pg');
 const nodemailer = require('nodemailer');
+const resolveDbSsl = require('./src/config/db-ssl');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   user:     process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  ssl:      process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl:      resolveDbSsl(),
 });
 
 // ── Crypto helpers ────────────────────────────────────────────────────────────

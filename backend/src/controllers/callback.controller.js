@@ -2,6 +2,7 @@
 
 const db     = require('../config/database');
 const logger = require('../config/logger');
+const userService = require('../services/user.service');
 
 // Always respond 200 immediately — Safaricom retries if we don't respond quickly
 function ack(res) {
@@ -30,8 +31,8 @@ async function handleSTKCallback(req, res) {
     
     const transaction = rows[0];
     
-    // Prevent replay attacks by only processing pending transactions
-    if (transaction.status !== 'pending') {
+    // Prevent replay attacks by only processing active transactions
+    if (!['pending', 'processing'].includes(transaction.status)) {
       logger.warn('STK callback: transaction already processed', { 
         transactionId: transaction.id, 
         currentStatus: transaction.status,
@@ -42,7 +43,7 @@ async function handleSTKCallback(req, res) {
     
     const transactionId = transaction.id;
 
-    if (ResultCode === 0) {
+    if (String(ResultCode) === '0') {
       const items = CallbackMetadata?.Item || [];
       const get = (name) => items.find((i) => i.Name === name)?.Value;
       const receipt = String(get('MpesaReceiptNumber') || '');
@@ -54,16 +55,17 @@ async function handleSTKCallback(req, res) {
              mpesa_transaction_id=$1,
              callback_payload=$2,
              updated_at=NOW()
-         WHERE id=$3 AND status='pending'`,
+         WHERE id=$3 AND status IN ('pending', 'processing')`,
         [receipt, JSON.stringify(req.body), transactionId],
       );
+      await userService.handleTransactionCommission(db, transactionId);
       logger.info('Deposit completed via STK callback', { transactionId, receipt, amount });
     } else {
-      const newStatus = ResultCode === 1032 ? 'cancelled' : 'failed';
+      const newStatus = String(ResultCode) === '1032' ? 'cancelled' : 'failed';
       await db.query(
         `UPDATE transactions
          SET status=$1, failure_reason=$2, callback_payload=$3, updated_at=NOW()
-         WHERE id=$4 AND status='pending'`,
+         WHERE id=$4 AND status IN ('pending', 'processing')`,
         [newStatus, ResultDesc, JSON.stringify(req.body), transactionId],
       );
       logger.info('Deposit not completed', { transactionId, ResultCode, ResultDesc });
@@ -96,8 +98,8 @@ async function handleB2CResult(req, res) {
     
     const transaction = rows[0];
     
-    // Prevent replay attacks by only processing pending transactions
-    if (transaction.status !== 'pending') {
+    // Prevent replay attacks by only processing active transactions
+    if (!['pending', 'processing'].includes(transaction.status)) {
       logger.warn('B2C callback: transaction already processed', { 
         transactionId: transaction.id, 
         currentStatus: transaction.status,
@@ -108,7 +110,7 @@ async function handleB2CResult(req, res) {
     
     const transactionId = transaction.id;
 
-    if (ResultCode === 0) {
+    if (String(ResultCode) === '0') {
       const params = ResultParameters?.ResultParameter || [];
       const get = (key) => params.find((p) => p.Key === key)?.Value;
       const receipt = String(get('TransactionReceipt') || '');
@@ -119,15 +121,16 @@ async function handleB2CResult(req, res) {
              b2c_transaction_id=$1,
              callback_payload=$2,
              updated_at=NOW()
-         WHERE id=$3 AND status='pending'`,
+         WHERE id=$3 AND status IN ('pending', 'processing')`,
         [receipt, JSON.stringify(req.body), transactionId],
       );
+      await userService.handleTransactionCommission(db, transactionId);
       logger.info('Withdrawal completed via B2C callback', { transactionId, receipt });
     } else {
       await db.query(
         `UPDATE transactions
          SET status='failed', failure_reason=$1, callback_payload=$2, updated_at=NOW()
-         WHERE id=$3 AND status='pending'`,
+         WHERE id=$3 AND status IN ('pending', 'processing')`,
         [ResultDesc, JSON.stringify(req.body), transactionId],
       );
       logger.info('Withdrawal failed', { transactionId, ResultCode, ResultDesc });

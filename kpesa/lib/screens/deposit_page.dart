@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 
@@ -15,7 +16,13 @@ class _DepositPageState extends State<DepositPage> {
   bool _isKesInput = true;
   bool _showLimitError = false;
   bool _isInitiating = false;
-  String _mpesaPhone = '';
+  bool _loadingMethods = true;
+  List<Map<String, dynamic>> _paymentMethods = [];
+  String? _selectedMethodId;
+  double _minDepositUsd = 5;
+  bool _hasDerivLinked = false;
+  bool _hasBinanceLinked = false;
+  bool _hasMt5Account = false;
 
   static const _accent = Color.fromARGB(255, 55, 194, 21);
   static const double _exchangeRate = 133.77375;
@@ -23,31 +30,154 @@ class _DepositPageState extends State<DepositPage> {
   @override
   void initState() {
     super.initState();
-    _fetchUserPhone();
+    _fetchPaymentMethods();
+    _fetchAppConfig();
+    _fetchLinkedDestinations();
   }
 
-  Future<void> _fetchUserPhone() async {
-    final profile = await ApiService.getProfile();
-    if (!mounted || profile == null) return;
-    final methods = profile['paymentMethods'] as List<dynamic>?;
-    if (methods == null) return;
-    for (final m in methods) {
-      final map = m as Map<String, dynamic>;
-      if (map['type'] == 'mpesa' && map['phoneNumber'] != null) {
-        setState(() => _mpesaPhone = map['phoneNumber'] as String);
-        return;
+  String get _selectedDestinationType =>
+      ['deriv', 'mt5', 'binance'][_selectedTab];
+
+  String get _selectedDestinationLabel =>
+      ['Deriv', 'MT5', 'Binance'][_selectedTab];
+
+  bool _isDestinationEnabled(int index) {
+    // If neither Deriv nor Binance is linked, allow attempt (may still succeed)
+    final anyLinked = _hasDerivLinked || _hasBinanceLinked;
+    if (!anyLinked) return true;
+    
+    if (index == 0) return _hasDerivLinked; // Deriv
+    if (index == 1) return _hasDerivLinked; // MT5 depends on Deriv linkage
+    return _hasBinanceLinked; // Binance
+  }
+
+  int _firstEnabledDestinationIndex() {
+    for (var i = 0; i < 3; i++) {
+      if (_isDestinationEnabled(i)) return i;
+    }
+    return 0;
+  }
+
+  Future<void> _fetchLinkedDestinations() async {
+    final results = await Future.wait([
+      ApiService.getProfile(),
+      ApiService.getBalances(),
+    ]);
+    if (!mounted) return;
+    final profile = results[0];
+    final balances = results[1];
+    if (profile == null && balances == null) return;
+
+    final derivAccount = (profile?['deriv_account'] as String?)?.trim() ?? '';
+    final derivEmail = (profile?['deriv_email'] as String?)?.trim() ?? '';
+    final derivName = (profile?['deriv_name'] as String?)?.trim() ?? '';
+    final binanceId = (profile?['binance_id'] as String?)?.trim() ?? '';
+    final derivBalance = balances?['deriv'];
+    final mt5Accounts = balances?['mt5Accounts'] as List<dynamic>? ?? const [];
+
+    setState(() {
+      _hasDerivLinked =
+          derivAccount.isNotEmpty ||
+          derivEmail.isNotEmpty ||
+          derivName.isNotEmpty ||
+          derivBalance != null;
+      _hasBinanceLinked = binanceId.isNotEmpty;
+      _hasMt5Account = mt5Accounts.isNotEmpty;
+      if (!_isDestinationEnabled(_selectedTab)) {
+        _selectedTab = _firstEnabledDestinationIndex();
+      }
+    });
+  }
+
+  Future<void> _fetchAppConfig() async {
+    final balances = await ApiService.getBalances();
+    if (!mounted || balances == null) return;
+    final appConfig = balances['appConfig'] as Map<String, dynamic>?;
+    final minDeposit = appConfig?['minDepositUsd'];
+    final parsed = minDeposit is num
+        ? minDeposit.toDouble()
+        : double.tryParse(minDeposit?.toString() ?? '');
+    if (parsed == null || parsed <= 0) return;
+    setState(() => _minDepositUsd = parsed);
+  }
+
+  Future<void> _fetchPaymentMethods() async {
+    final methods = await ApiService.getPaymentMethods();
+    if (!mounted) return;
+
+    final mobileMethods = methods.where((m) {
+      final type = m['type'] as String?;
+      final phone = (m['phone_number'] as String?)?.trim() ?? '';
+      return (type == 'mpesa' || type == 'airtel') && phone.isNotEmpty;
+    }).toList();
+
+    String? selectedMethodId = _selectedMethodId;
+    if (selectedMethodId == null ||
+        mobileMethods.every((m) => m['id'] != selectedMethodId)) {
+      if (mobileMethods.isNotEmpty) {
+        final defaultMethod = mobileMethods.firstWhere(
+          (m) => m['is_default'] == true,
+          orElse: () => mobileMethods.first,
+        );
+        selectedMethodId = defaultMethod['id'] as String?;
+      } else {
+        selectedMethodId = null;
       }
     }
+
+    setState(() {
+      _paymentMethods = methods;
+      _selectedMethodId = selectedMethodId;
+      _loadingMethods = false;
+    });
+  }
+
+  List<Map<String, dynamic>> get _mobileMethods {
+    return _paymentMethods
+        .where((m) {
+          final type = m['type'] as String?;
+          final phone = (m['phone_number'] as String?)?.trim() ?? '';
+          return (type == 'mpesa' || type == 'airtel') && phone.isNotEmpty;
+        })
+        .toList(growable: false);
+  }
+
+  List<Map<String, dynamic>> get _bankMethods {
+    return _paymentMethods
+        .where((m) => m['type'] == 'bank')
+        .toList(growable: false);
+  }
+
+  Map<String, dynamic>? get _selectedMethod {
+    final selectedMethodId = _selectedMethodId;
+    if (selectedMethodId == null) return null;
+    for (final method in _mobileMethods) {
+      if (method['id'] == selectedMethodId) return method;
+    }
+    return null;
+  }
+
+  String? get _selectedMobilePhone {
+    final selected = _selectedMethod;
+    if (selected == null) return null;
+    final phone = (selected['phone_number'] as String?)?.trim();
+    if (phone == null || phone.isEmpty) return null;
+    return phone;
   }
 
   Future<void> _initiateDeposit() async {
-    if (_mpesaPhone.isEmpty || _isInitiating) return;
+    if (_isInitiating) return;
+    if (!_isDestinationEnabled(_selectedTab)) return;
+    final selectedMethod = _selectedMethod;
+    final selectedPhone = _selectedMobilePhone;
+    if (selectedMethod == null || selectedPhone == null) return;
+
     setState(() => _isInitiating = true);
-    final destinationType = ['deriv', 'mt5', 'binance'][_selectedTab];
+    final destinationType = _selectedDestinationType;
     final result = await ApiService.initiateDeposit(
       amountKes: _kesAmount,
       destinationType: destinationType,
-      mpesaPhone: _mpesaPhone,
+      mpesaPhone: selectedPhone,
     );
     if (!mounted) return;
     setState(() => _isInitiating = false);
@@ -60,15 +190,343 @@ class _DepositPageState extends State<DepositPage> {
       );
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'M-Pesa PIN prompt sent to $_mpesaPhone. Enter your PIN to complete.',
-        ),
-        backgroundColor: _accent,
-        duration: const Duration(seconds: 8),
-      ),
+
+    _showProcessingSheet(
+      result['transactionId'] as String? ?? '',
+      _kesAmount,
+      selectedPhone,
+      destinationType,
     );
+  }
+
+  void _showProcessingSheet(String initialTransactionId, double amountKes, String mpesaPhone, String dest) {
+    final pageNavigator = Navigator.of(context);
+    String transactionId = initialTransactionId;
+    Timer? timer;
+    int elapsedSeconds = 0;
+    String status = 'processing';
+    String failureReason = '';
+    bool isRetrying = false;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final isDark = Theme.of(ctx).brightness == Brightness.dark;
+            final bg = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+            final textColor = isDark ? Colors.white : Colors.black87;
+            final subtle = isDark ? Colors.white60 : Colors.black45;
+
+            // Start polling if status is processing and timer hasn't been set
+            if (timer == null && status == 'processing') {
+              timer = Timer.periodic(const Duration(seconds: 1), (t) async {
+                elapsedSeconds += 1;
+                
+                // Trigger UI update for elapsed timeout counter
+                if (ctx.mounted) {
+                  setSheetState(() {});
+                }
+
+                if (elapsedSeconds >= 25) {
+                  t.cancel();
+                  if (ctx.mounted) {
+                    setSheetState(() {
+                      status = 'timeout';
+                      failureReason = 'Payment prompt expired. Please make sure your phone is unlocked and try again.';
+                    });
+                  }
+                  return;
+                }
+
+                // Poll status every 3 seconds
+                if (elapsedSeconds % 3 == 0) {
+                  try {
+                    final res = await ApiService.getDepositStatus(transactionId);
+                    if (res != null && ctx.mounted) {
+                      final newStatus = res['status'] as String? ?? 'processing';
+                      final reason = res['failure_reason'] as String? ?? '';
+                      if (newStatus == 'completed') {
+                        t.cancel();
+                        setSheetState(() {
+                          status = 'completed';
+                        });
+                        
+                        final sheetNavigator = Navigator.of(ctx);
+                        Future.delayed(const Duration(seconds: 2), () {
+                          if (ctx.mounted) {
+                            sheetNavigator.pop(); // Close sheet
+                            if (mounted) {
+                              pageNavigator.pop(); // Close DepositPage and return to dashboard
+                            }
+                          }
+                        });
+                      } else if (newStatus == 'failed' || newStatus == 'cancelled') {
+                        t.cancel();
+                        setSheetState(() {
+                          status = newStatus;
+                          failureReason = reason.isNotEmpty 
+                              ? reason 
+                              : 'M-Pesa payment failed. Please try again.';
+                        });
+                      }
+                    }
+                  } catch (_) {}
+                }
+              });
+            }
+
+            Future<void> retrySTK() async {
+              if (isRetrying) return;
+              setSheetState(() {
+                isRetrying = true;
+                status = 'processing';
+                failureReason = '';
+                elapsedSeconds = 0;
+              });
+
+              try {
+                final res = await ApiService.initiateDeposit(
+                  amountKes: amountKes,
+                  destinationType: dest,
+                  mpesaPhone: mpesaPhone,
+                );
+
+                if (!ctx.mounted) return;
+
+                if (res != null) {
+                  final newTxId = res['transactionId'] as String? ?? '';
+                  setSheetState(() {
+                    transactionId = newTxId;
+                    isRetrying = false;
+                    timer = null; // Let next tick rebuild and recreate timer
+                  });
+                } else {
+                  setSheetState(() {
+                    status = 'failed';
+                    failureReason = 'Could not re-initiate STK Push. Please check your connection.';
+                    isRetrying = false;
+                  });
+                }
+              } catch (e) {
+                if (ctx.mounted) {
+                  setSheetState(() {
+                    status = 'failed';
+                    failureReason = 'Error: $e';
+                    isRetrying = false;
+                  });
+                }
+              }
+            }
+
+            Widget modalContent;
+            if (status == 'processing') {
+              modalContent = Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 12),
+                  const SizedBox(
+                    width: 60,
+                    height: 60,
+                    child: CircularProgressIndicator(strokeWidth: 3),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Confirming Payment...',
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'An M-Pesa prompt has been sent to $mpesaPhone.\nPlease check your phone, enter your PIN and wait here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: subtle,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'KES ${amountKes.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Timeout in ${25 - elapsedSeconds}s',
+                    style: TextStyle(
+                      color: subtle.withValues(alpha: 0.8),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              );
+            } else if (status == 'completed') {
+              modalContent = Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: _accent.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_circle_rounded,
+                      color: _accent,
+                      size: 44,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Deposit Successful!',
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'KES ${amountKes.toStringAsFixed(0)} has been deposited successfully to ${dest.toUpperCase()}.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: subtle,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              );
+            } else {
+              modalContent = Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.error_rounded,
+                      color: Colors.red,
+                      size: 44,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    status == 'timeout' ? 'Prompt Expired' : 'Payment Failed',
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      failureReason,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: subtle,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            timer?.cancel();
+                            Navigator.pop(ctx);
+                          },
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: subtle.withValues(alpha: 0.3)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: Text(
+                            'Close',
+                            style: TextStyle(color: textColor),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: isRetrying ? null : retrySTK,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _accent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            elevation: 0,
+                          ),
+                          child: Text(
+                            isRetrying ? 'Retrying...' : 'Retry Push',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            }
+
+            return Container(
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(28),
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 24),
+                    decoration: BoxDecoration(
+                      color: subtle.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  modalContent,
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ).then((_) {
+      timer?.cancel();
+    });
   }
 
   double get _usdAmount {
@@ -132,7 +590,21 @@ class _DepositPageState extends State<DepositPage> {
   }
 
   void _showDepositDialog() {
-    bool isMpesaSelected = false; // Move state variable outside
+    final mobileMethods = _mobileMethods;
+    final bankMethods = _bankMethods;
+
+    String? selectedMethodId = _selectedMethodId;
+    if (selectedMethodId != null &&
+        mobileMethods.every((m) => m['id'] != selectedMethodId)) {
+      selectedMethodId = null;
+    }
+    if (selectedMethodId == null && mobileMethods.isNotEmpty) {
+      final defaultMethod = mobileMethods.firstWhere(
+        (m) => m['is_default'] == true,
+        orElse: () => mobileMethods.first,
+      );
+      selectedMethodId = defaultMethod['id'] as String?;
+    }
 
     showGeneralDialog(
       context: context,
@@ -161,7 +633,10 @@ class _DepositPageState extends State<DepositPage> {
                 borderRadius: BorderRadius.circular(16),
               ),
               child: StatefulBuilder(
-                builder: (BuildContext context, StateSetter setState) {
+                builder: (BuildContext context, StateSetter dialogSetState) {
+                  final canProceed =
+                      mobileMethods.isNotEmpty && selectedMethodId != null;
+
                   return Padding(
                     padding: const EdgeInsets.all(24.0),
                     child: Column(
@@ -177,7 +652,7 @@ class _DepositPageState extends State<DepositPage> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'You can set your default deposit account in the account setting page.',
+                          'Select the registered number to use for this $_selectedDestinationLabel deposit.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: textColor,
@@ -187,102 +662,57 @@ class _DepositPageState extends State<DepositPage> {
                         ),
                         const SizedBox(height: 24),
 
-                        // M-PESA Account Option
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              isMpesaSelected = !isMpesaSelected;
-                            });
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
+                        if (_loadingMethods)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: CircularProgressIndicator(color: _accent),
+                          )
+                        else if (mobileMethods.isNotEmpty)
+                          ...mobileMethods.map(
+                            (method) => _buildDepositMethodTile(
+                              method: method,
+                              isDark: isDark,
+                              textColor: textColor,
+                              subtleColor: subtleColor,
+                              isSelected: selectedMethodId == method['id'],
+                              onTap: () {
+                                dialogSetState(() {
+                                  selectedMethodId = method['id'] as String?;
+                                });
+                              },
                             ),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF1E1E1E)
-                                  : Colors.white,
-                              border: Border.all(
-                                color: isMpesaSelected
-                                    ? _accent // K-Pesa Green highlight
-                                    : (isDark
-                                          ? Colors.white10
-                                          : Colors.black12),
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Row(
-                              children: [
-                                // Placeholder for M-PESA logo (using text for now)
-                                Text(
-                                  'M-PESA',
-                                  style: TextStyle(
-                                    color: Colors.greenAccent[700],
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'M-PESA',
-                                      style: TextStyle(
-                                        color: textColor,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _mpesaPhone.isNotEmpty
-                                          ? _mpesaPhone
-                                          : 'No M-Pesa linked',
-                                      style: TextStyle(
-                                        color: textColor,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const Spacer(),
-                                // Radio button outline
-                                Container(
-                                  width: 20,
-                                  height: 20,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: isMpesaSelected
-                                        ? _accent
-                                        : Colors.transparent,
-                                    border: Border.all(
-                                      color: isMpesaSelected
-                                          ? _accent
-                                          : subtleColor,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  child: isMpesaSelected
-                                      ? const Icon(
-                                          Icons.check,
-                                          size: 14,
-                                          color: Colors.white,
-                                        )
-                                      : null,
-                                ),
-                              ],
+                          )
+                        else if (bankMethods.isNotEmpty) ...[
+                          Text(
+                            'No mobile money number found. Showing your registered bank account:',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: subtleColor, fontSize: 13),
+                          ),
+                          const SizedBox(height: 12),
+                          ...bankMethods.map(
+                            (method) => _buildBankSummaryTile(
+                              method: method,
+                              isDark: isDark,
+                              textColor: textColor,
+                              subtleColor: subtleColor,
                             ),
                           ),
-                        ),
+                        ] else
+                          Text(
+                            'No payment method found. Link M-Pesa, Airtel, or bank in Payment Providers.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: subtleColor, fontSize: 13),
+                          ),
 
                         const SizedBox(height: 32),
 
                         // Proceed Button
                         TextButton(
-                          onPressed: isMpesaSelected
+                          onPressed: canProceed
                               ? () {
+                                  setState(
+                                    () => _selectedMethodId = selectedMethodId,
+                                  );
                                   Navigator.pop(context);
                                   _initiateDeposit();
                                 }
@@ -290,7 +720,7 @@ class _DepositPageState extends State<DepositPage> {
                           child: Text(
                             'Proceed',
                             style: TextStyle(
-                              color: isMpesaSelected
+                              color: canProceed
                                   ? _accent
                                   : Colors.white38, // Dimmed as in screenshot
                               fontSize: 16,
@@ -322,6 +752,160 @@ class _DepositPageState extends State<DepositPage> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildDepositMethodTile({
+    required Map<String, dynamic> method,
+    required bool isDark,
+    required Color textColor,
+    required Color subtleColor,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final type = method['type'] as String? ?? '';
+    final phone = (method['phone_number'] as String?)?.trim() ?? '';
+
+    final typeLabel = type == 'airtel' ? 'Airtel Money' : 'M-PESA';
+    final badgeLabel = type == 'airtel' ? 'AIRTEL' : 'M-PESA';
+    final badgeColor = type == 'airtel' ? Colors.red.shade700 : _accent;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          border: Border.all(
+            color: isSelected
+                ? _accent
+                : (isDark ? Colors.white10 : Colors.black12),
+            width: isSelected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: badgeColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                badgeLabel,
+                style: TextStyle(
+                  color: badgeColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    typeLabel,
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (phone.isNotEmpty)
+                    Text(
+                      phone,
+                      style: TextStyle(color: subtleColor, fontSize: 12),
+                    ),
+                ],
+              ),
+            ),
+            Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected ? _accent : Colors.transparent,
+                border: Border.all(
+                  color: isSelected ? _accent : subtleColor,
+                  width: 2,
+                ),
+              ),
+              child: isSelected
+                  ? const Icon(Icons.check, size: 13, color: Colors.white)
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBankSummaryTile({
+    required Map<String, dynamic> method,
+    required bool isDark,
+    required Color textColor,
+    required Color subtleColor,
+  }) {
+    final bankName = (method['bank_name'] as String?)?.trim() ?? 'Bank';
+    final accountName = (method['account_name'] as String?)?.trim() ?? '';
+    final accountNumber = (method['account_number'] as String?)?.trim() ?? '';
+    final details = [
+      accountName,
+      accountNumber,
+    ].where((v) => v.isNotEmpty).join(' • ');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text(
+              'BANK',
+              style: TextStyle(
+                color: Colors.blue,
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  bankName,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (details.isNotEmpty)
+                  Text(
+                    details,
+                    style: TextStyle(color: subtleColor, fontSize: 12),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -479,15 +1063,27 @@ class _DepositPageState extends State<DepositPage> {
     final usdVal = _usdAmount;
     final kesVal = _kesAmount;
     final isLimitReached = _showLimitError || kesVal >= 250000;
-    final canDeposit = usdVal >= 5 && kesVal <= 250000;
+    final canDeposit =
+        _isDestinationEnabled(_selectedTab) &&
+        usdVal >= _minDepositUsd &&
+        kesVal <= 250000;
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF131313) : Colors.white,
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            children: [
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight,
+                ),
+                child: IntrinsicHeight(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      children: [
               // ── Header ────────────────────────────────────
               const SizedBox(height: 12),
               Row(
@@ -521,6 +1117,11 @@ class _DepositPageState extends State<DepositPage> {
 
               // ── Segmented toggle ──────────────────────────
               _buildSegmentedToggle(isDark, cardBg, textColor),
+              const SizedBox(height: 8),
+              Text(
+                'Only linked destinations are active.',
+                style: TextStyle(color: subtleColor, fontSize: 12),
+              ),
 
               const SizedBox(height: 24),
 
@@ -635,7 +1236,7 @@ class _DepositPageState extends State<DepositPage> {
               Text(
                 isLimitReached
                     ? 'Maximum deposit amount is 250,000\nKES'
-                    : 'Minimum deposit amount is 5 USD',
+                    : 'Minimum deposit amount is ${_minDepositUsd.toStringAsFixed(_minDepositUsd % 1 == 0 ? 0 : 2)} USD',
                 style: TextStyle(
                   color: isLimitReached ? Colors.redAccent : textColor,
                   fontSize: 14,
@@ -645,7 +1246,7 @@ class _DepositPageState extends State<DepositPage> {
                 textAlign: TextAlign.center,
               ),
 
-              const Spacer(),
+              const SizedBox(height: 24),
 
               // ── Number pad ─────────────────────────────────
               _buildNumberPad(keyBg, textColor),
@@ -671,23 +1272,7 @@ class _DepositPageState extends State<DepositPage> {
                   ),
                   onPressed: canDeposit
                       ? () {
-                          if (_selectedTab == 0) {
-                            // Deriv specifically requested
-                            _showDepositDialog();
-                          } else {
-                            final destination = [
-                              'Deriv',
-                              'MT5',
-                              'Binance',
-                            ][_selectedTab];
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Depositing \$${usdVal.toStringAsFixed(2)} USD to $destination',
-                                ),
-                              ),
-                            );
-                          }
+                          _showDepositDialog();
                         }
                       : null,
                   child: Row(
@@ -714,8 +1299,12 @@ class _DepositPageState extends State<DepositPage> {
               ),
 
               const SizedBox(height: 16),
-            ],
-          ),
+                    ],
+                  ),
+                ),
+              ),
+            ));
+          },
         ),
       ),
     );
@@ -733,33 +1322,46 @@ class _DepositPageState extends State<DepositPage> {
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.max,
         children: List.generate(labels.length, (i) {
           final isActive = _selectedTab == i;
-          return GestureDetector(
-            onTap: () {
-              if (i == 1 && _selectedTab != 1) {
-                // MT5 selected
-                _showMT5LinkDialog();
-              } else {
-                setState(() => _selectedTab = i);
-              }
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-              decoration: BoxDecoration(
-                color: isActive ? _accent : Colors.transparent, // K-Pesa Accent
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                labels[i],
-                style: TextStyle(
-                  color: isActive
-                      ? Colors.white
-                      : (isDark ? Colors.white60 : Colors.black54),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+          final isEnabled = _isDestinationEnabled(i);
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                if (!isEnabled) return;
+                if (i == 1 && _selectedTab != 1) {
+                  if (_hasMt5Account) {
+                    setState(() => _selectedTab = i);
+                  } else {
+                    _showMT5LinkDialog();
+                  }
+                } else {
+                  setState(() => _selectedTab = i);
+                }
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: isActive ? _accent : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Text(
+                    labels[i],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isActive
+                          ? Colors.white
+                          : isEnabled
+                          ? (isDark ? Colors.white60 : Colors.black54)
+                          : (isDark ? Colors.white30 : Colors.black26),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),

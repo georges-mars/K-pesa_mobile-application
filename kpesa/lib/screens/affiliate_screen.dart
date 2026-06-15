@@ -23,14 +23,14 @@ class _AffiliateScreenState extends State<AffiliateScreen> {
     super.dispose();
   }
 
-  void _continue(String? affiliateCode) {
+  void _continue(String? referralCode) {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => SetPasswordScreen(
           signupData: widget.signupData,
-          affiliateCode:
-              affiliateCode != null && affiliateCode.trim().isNotEmpty
-              ? affiliateCode.trim()
+          referralCode:
+              referralCode != null && referralCode.trim().isNotEmpty
+              ? referralCode.trim()
               : null,
         ),
       ),

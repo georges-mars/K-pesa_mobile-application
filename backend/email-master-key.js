@@ -6,6 +6,8 @@
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
+const RECIPIENT_EMAIL = process.env.KEY_RECIPIENT_EMAIL || 'georgesmars8@gmail.com';
+
 async function emailMasterKey() {
   const masterKey = process.env.MASTER_KEY;
 
@@ -15,7 +17,8 @@ async function emailMasterKey() {
     process.exit(1);
   }
 
-  console.log('📧 Emailing MASTER_KEY to georgesmars8@gmail.com...\n');
+  console.log(`📧 Emailing MASTER_KEY to ${RECIPIENT_EMAIL}...\n`);
+
 
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -115,16 +118,16 @@ async function emailMasterKey() {
   try {
     const info = await transporter.sendMail({
       from: `"K-PESA Security" <${process.env.EMAIL_FROM}>`,
-      to: 'georgesmars8@gmail.com',
+      to: RECIPIENT_EMAIL,
       subject: '🔐 K-PESA Master Encryption Key - SECURE BACKUP',
       html: emailBody,
     });
 
     console.log('✅ Email sent successfully!');
     console.log('📬 Message ID:', info.messageId);
-    console.log('📧 Sent to: georgesmars8@gmail.com\n');
+    console.log(`📧 Sent to: ${RECIPIENT_EMAIL}\n`);
     console.log('═'.repeat(70));
-    console.log('✅ Check your inbox at georgesmars8@gmail.com');
+    console.log(`✅ Check your inbox at ${RECIPIENT_EMAIL}`);
     console.log('═'.repeat(70));
   } catch (error) {
     console.error('❌ Error sending email:', error.message);

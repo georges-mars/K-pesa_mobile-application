@@ -18,6 +18,99 @@ function generateReferralCode() {
   return 'KPESA-' + crypto.randomBytes(3).toString('hex').toUpperCase();
 }
 
+async function getActiveReferralSettings(client, referrerId, referralCode) {
+  // 1. Look up custom configuration in referral_configs table
+  const { rows: configRows } = await client.query(
+    `SELECT division_type, reward_value, split_percentage_user, split_percentage_us, expiry_amount, expiry_date, fixed_split_cap 
+     FROM referral_configs 
+     WHERE referral_code = $1 AND is_active = TRUE`,
+    [referralCode]
+  );
+
+  if (configRows.length > 0) {
+    const config = configRows[0];
+    
+    // Check Date Expiry
+    if (config.division_type === 'flat_with_expiry_date' && config.expiry_date) {
+      if (new Date() > new Date(config.expiry_date)) {
+        return { type: 'expired', value: 0 };
+      }
+    }
+    
+    // Check Amount/Revenue Share Expiry
+    if ((config.division_type === 'flat_with_expiry_amount' || config.division_type === 'fixed_split') && config.expiry_amount) {
+      const { rows: sumRows } = await client.query(
+        'SELECT COALESCE(SUM(commission_kes), 0) AS total_earned FROM affiliate_redemptions WHERE referrer_id = $1',
+        [referrerId]
+      );
+      const totalEarned = parseFloat(sumRows[0].total_earned);
+      if (totalEarned >= parseFloat(config.expiry_amount)) {
+        return { type: 'expired', value: 0 };
+      }
+    }
+
+    return {
+      type: config.division_type,
+      value: config.reward_value ? parseFloat(config.reward_value) : 0.00,
+      split_percentage_user: config.split_percentage_user ? parseFloat(config.split_percentage_user) : 0.00,
+      split_percentage_us: config.split_percentage_us ? parseFloat(config.split_percentage_us) : 0.00,
+      expiry_amount: config.expiry_amount ? parseFloat(config.expiry_amount) : null,
+      expiry_date: config.expiry_date || null,
+      fixed_split_cap: config.fixed_split_cap ? parseFloat(config.fixed_split_cap) : null,
+    };
+  }
+
+  // 2. Fall back to custom_referral_codes table (legacy)
+  const { rows: customRows } = await client.query(
+    `SELECT reward_type, reward_value, expiry_amount, expiry_date 
+     FROM custom_referral_codes 
+     WHERE code = $1`,
+    [referralCode]
+  );
+
+  if (customRows.length > 0) {
+    const config = customRows[0];
+    
+    // Check Date Expiry
+    if (config.reward_type === 'flat_date_limit' && config.expiry_date) {
+      if (new Date() > new Date(config.expiry_date)) {
+        return { type: 'expired', value: 0 };
+      }
+    }
+    
+    // Check Amount/Revenue Share Expiry
+    if ((config.reward_type === 'flat_amount_limit' || config.reward_type === 'revenue_share_limit') && config.expiry_amount) {
+      const { rows: sumRows } = await client.query(
+        'SELECT COALESCE(SUM(commission_kes), 0) AS total_earned FROM affiliate_redemptions WHERE referrer_id = $1',
+        [referrerId]
+      );
+      const totalEarned = parseFloat(sumRows[0].total_earned);
+      if (totalEarned >= parseFloat(config.expiry_amount)) {
+        return { type: 'expired', value: 0 };
+      }
+    }
+
+    return {
+      type: config.reward_type,
+      value: parseFloat(config.reward_value),
+      expiry_amount: config.expiry_amount ? parseFloat(config.expiry_amount) : null
+    };
+  }
+
+  // 3. Fall back to global configuration if no custom configuration exists
+  const { rows: globalRows } = await client.query(
+    "SELECT key, value FROM app_config WHERE key IN ('referral_type', 'referral_value')"
+  );
+  let type = 'flat';
+  let value = 50.00;
+  globalRows.forEach(r => {
+    if (r.key === 'referral_type') type = r.value;
+    if (r.key === 'referral_value') value = parseFloat(r.value);
+  });
+
+  return { type, value, expiry_amount: null };
+}
+
 /** Issue a JWT access token. */
 function signAccessToken(userId, email) {
   return jwt.sign(
@@ -53,7 +146,7 @@ async function register(body, ip) {
     email, password, verificationToken,
     fullName, derivEmail, derivName, derivAccount, binanceId,
     mpesaPhone, airtelPhone, bankName, bankAccountName, bankAccountNumber,
-    affiliateCode,
+    referral_code,
   } = body;
 
   // 1. Validate verificationToken
@@ -75,19 +168,48 @@ async function register(body, ip) {
   // 3. Hash password
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-  // 4. Generate unique referral code
-  let referralCode;
-  for (let i = 0; i < 5; i++) {
-    const candidate = generateReferralCode();
-    const check = await db.query('SELECT id FROM users WHERE referral_code = $1', [candidate]);
-    if (check.rows.length === 0) { referralCode = candidate; break; }
+  // 4. Set referral code (only if pre-configured by admin, no auto-generation)
+  let referralCode = null;
+  const { rows: customCodeRows } = await db.query(
+    'SELECT code FROM custom_referral_codes WHERE email = $1',
+    [email.toLowerCase()]
+  );
+  if (customCodeRows.length > 0) {
+    referralCode = customCodeRows[0].code;
   }
 
-  // 5. Resolve affiliate referrer
-  let referredBy = null;
-  if (affiliateCode) {
-    const ref = await db.query('SELECT id FROM users WHERE referral_code = $1', [affiliateCode.trim().toUpperCase()]);
-    if (ref.rows.length > 0) referredBy = ref.rows[0].id;
+  // 5. Resolve affiliate referrer UUID (for redemptions) and store literal code in referred_by
+  const rawRefCode = referral_code;
+  let referredByCode = null;
+  let referredByUuid = null;
+  if (rawRefCode && rawRefCode.trim().length > 0) {
+    referredByCode = rawRefCode.trim().toUpperCase();
+    
+    // Find if the code belongs to a registered user
+    const ref = await db.query('SELECT id FROM users WHERE referral_code = $1', [referredByCode]);
+    if (ref.rows.length > 0) {
+      referredByUuid = ref.rows[0].id;
+    } else {
+      // Check if it's a custom referral code
+      const { rows: customRows } = await db.query(
+        'SELECT email, phone FROM custom_referral_codes WHERE code = $1',
+        [referredByCode]
+      );
+      if (customRows.length > 0) {
+        const customCode = customRows[0];
+        if (customCode.email) {
+          const uRef = await db.query('SELECT id FROM users WHERE email = $1', [customCode.email]);
+          if (uRef.rows.length > 0) referredByUuid = uRef.rows[0].id;
+        } else if (customCode.phone) {
+          const phoneHmac = await cryptoService.hmacField(customCode.phone);
+          const pmRef = await db.query(
+            'SELECT user_id FROM payment_methods WHERE phone_number_hmac = $1 AND is_active = TRUE',
+            [phoneHmac]
+          );
+          if (pmRef.rows.length > 0) referredByUuid = pmRef.rows[0].user_id;
+        }
+      }
+    }
   }
 
   const client = await db.getClient();
@@ -106,7 +228,7 @@ async function register(body, ip) {
       [
         email.toLowerCase(), passwordHash, encryptedName,
         derivEmail || null, derivName || null, derivAccount || null,
-        binanceId || null, referralCode, referredBy, piiKeyVersion,
+        binanceId || null, referralCode, referredByCode, piiKeyVersion,
       ],
     );
     const userId = userResult.rows[0].id;
@@ -160,12 +282,28 @@ async function register(body, ip) {
     }
 
     // 8. Record affiliate redemption
-    if (referredBy) {
+    if (referredByUuid) {
+      const settings = await getActiveReferralSettings(client, referredByUuid, referredByCode);
+
+      let commissionKes = 0.00;
+      if (['flat', 'flat_amount_limit', 'flat_date_limit', 'flat_with_expiry_amount', 'flat_with_expiry_date'].includes(settings.type)) {
+        commissionKes = settings.value;
+      }
+
       await client.query(
-        `INSERT INTO affiliate_redemptions (referrer_id, referee_id, referral_code)
-         VALUES ($1,$2,$3) ON CONFLICT (referee_id) DO NOTHING`,
-        [referredBy, userId, affiliateCode.trim().toUpperCase()],
+        `INSERT INTO affiliate_redemptions (referrer_id, referee_id, referral_code, commission_kes)
+         VALUES ($1,$2,$3,$4) ON CONFLICT (referee_id) DO NOTHING`,
+        [referredByUuid, userId, referredByCode, commissionKes],
       );
+
+      if (commissionKes > 0) {
+        await client.query(
+          `UPDATE users 
+           SET referral_earnings = referral_earnings + $1 
+           WHERE id = $2`,
+          [commissionKes, referredByUuid]
+        );
+      }
     }
 
     await client.query('COMMIT');

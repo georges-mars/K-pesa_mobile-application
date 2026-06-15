@@ -14,12 +14,9 @@ class ApiService {
   // ── Base URL ─────────────────────────────────────────────────────────────────
   // Switch to your VPS URL before releasing to production.
   // For Android emulator local dev use: 'http://10.0.2.2:3000/api/v1'
-  static const _baseUrl =
-      'http://192.168.21.6:3000/api/v1'; //'https://api.k-pesa.tech/api/v1'
+  static const _baseUrl = 'https://85de-41-89-227-171.ngrok-free.app/api/v1';
 
-  static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  static const _storage = FlutterSecureStorage();
 
   // ── Token helpers ─────────────────────────────────────────────────────────────
 
@@ -232,26 +229,26 @@ class ApiService {
     String? bankName,
     String? bankAccountName,
     String? bankAccountNumber,
-    String? affiliateCode,
+    String? referralCode,
   }) async {
     final res = await _post('/auth/register', {
       'email': email,
       'password': password,
       'verificationToken': verificationToken,
       'fullName': fullName,
-      'derivEmail': ?derivEmail,
-      'derivName': ?derivName,
-      'derivAccount': ?derivAccount,
-      'derivAccessToken': ?derivAccessToken,
-      'derivRefreshToken': ?derivRefreshToken,
-      'derivTokenExpiresAt': ?derivTokenExpiresAt,
-      'binanceId': ?binanceId,
-      'mpesaPhone': ?mpesaPhone,
-      'airtelPhone': ?airtelPhone,
-      'bankName': ?bankName,
-      'bankAccountName': ?bankAccountName,
-      'bankAccountNumber': ?bankAccountNumber,
-      'affiliateCode': ?affiliateCode,
+      'derivEmail': derivEmail,
+      'derivName': derivName,
+      'derivAccount': derivAccount,
+      'derivAccessToken': derivAccessToken,
+      'derivRefreshToken': derivRefreshToken,
+      'derivTokenExpiresAt': derivTokenExpiresAt,
+      'binanceId': binanceId,
+      'mpesaPhone': mpesaPhone,
+      'airtelPhone': airtelPhone,
+      'bankName': bankName,
+      'bankAccountName': bankAccountName,
+      'bankAccountNumber': bankAccountNumber,
+      'referral_code': referralCode,
     }, auth: false);
 
     if (res.statusCode == 201) {
@@ -312,10 +309,65 @@ class ApiService {
     return body['error'] as String? ?? 'Failed to reset password.';
   }
 
+  /// Verify current password for logged in user. Returns null on success, error message on failure.
+  static Future<String?> verifyCurrentPassword(String password) async {
+    final res = await _post('/user/change-password/verify', {
+      'password': password,
+    });
+    if (res.statusCode == 200) return null; // success
+    try {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      return body['error'] as String? ?? 'Verification failed.';
+    } catch (_) {
+      return 'Verification failed.';
+    }
+  }
+
+  /// Complete password change. Returns null on success, error message on failure.
+  static Future<String?> changePasswordConfirm({
+    required String verificationToken,
+    required String newPassword,
+  }) async {
+    final res = await _post('/user/change-password/confirm', {
+      'verificationToken': verificationToken,
+      'newPassword': newPassword,
+    });
+    if (res.statusCode == 200) return null; // success
+    try {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      return body['error'] as String? ?? 'Failed to change password.';
+    } catch (_) {
+      return 'Failed to change password.';
+    }
+  }
+
   // ── User ──────────────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>?> getProfile() async {
     final res = await _get('/user/profile');
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> getReferralProfile() async {
+    final res = await _get('/user/profile/referral');
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      return {
+        'referralCode': data['referralCode'] ?? data['referral_code'] ?? '',
+        'referredBy': data['referredBy'] ?? data['referred_by'] ?? '',
+        'referralEarnings':
+            data['referralEarnings'] ?? data['referral_earnings'] ?? '0.00',
+        'config': data['config'],
+      };
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> getEarnings() async {
+    final res = await _get('/user/earnings');
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
@@ -445,7 +497,7 @@ class ApiService {
   }) async {
     final res = await _post('/deriv/connect', {
       'derivToken': derivToken,
-      'derivAccount': ?derivAccount,
+      'derivAccount': derivAccount,
     }, auth: false);
     if (res.statusCode == 200) {
       final body = jsonDecode(res.body) as Map<String, dynamic>;
@@ -466,9 +518,9 @@ class ApiService {
       'sourceType': sourceType,
       'mpesaPhone': mpesaPhone,
     });
-    if (res.statusCode == 200) {
+    try {
       return jsonDecode(res.body) as Map<String, dynamic>;
-    }
+    } catch (_) {}
     return null;
   }
 

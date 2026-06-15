@@ -1,0 +1,267 @@
+:root {
+  --bg: #0c111d;
+  --panel: #141b2d;
+  --panel-2: #1c2740;
+  --line: #2b3758;
+  --text: #eaf0ff;
+  --muted: #aebad8;
+  --accent: #5cb0ff;
+  --ok: #24c08a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.topbar p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.health {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: calc(100vh - 82px);
+}
+
+.sidebar {
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  padding: 14px;
+}
+
+.sidebar-header {
+  display: grid;
+  gap: 10px;
+}
+
+.sidebar h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+input,
+select,
+button {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+#tableList {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+}
+
+#tableList li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+#tableList li.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+#tableList .count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.content {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.controls {
+  display: flex;
+  gap: 14px;
+  align-items: end;
+  padding: 12px;
+}
+
+.control-row {
+  display: grid;
+  gap: 6px;
+}
+
+.control-row label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+.summary-item {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.summary-item span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.summary-item strong {
+  font-size: 16px;
+}
+
+.table-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.table-header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pager span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.table-wrap {
+  overflow: auto;
+  max-height: calc(100vh - 360px);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: #10182b;
+  z-index: 2;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  padding: 10px;
+  white-space: nowrap;
+}
+
+tbody td {
+  border-bottom: 1px solid #202b47;
+  padding: 9px 10px;
+  vertical-align: top;
+  max-width: 380px;
+  word-break: break-word;
+}
+
+tbody tr:hover {
+  background: #101b31;
+}
+
+.null {
+  color: #ff8ea6;
+}
+
+.json {
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #d5e4ff;
+}
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .summary {
+    grid-template-columns: 1fr;
+  }
+
+  .controls {
+    flex-wrap: wrap;
+  }
+}

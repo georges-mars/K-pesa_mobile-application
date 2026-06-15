@@ -25,10 +25,24 @@ router.use(authenticate);
 router.get('/profile',                          ctrl.getProfile);
 router.patch('/profile', validate(updateProfileSchema), ctrl.updateProfile);
 router.get('/payment-methods',                  ctrl.listPaymentMethods);
+const changePasswordVerifySchema = Joi.object({
+  password: Joi.string().required(),
+});
+
+const changePasswordConfirmSchema = Joi.object({
+  verificationToken: Joi.string().required(),
+  newPassword:       Joi.string().min(8).required(),
+});
+
 router.post('/payment-methods', validate(addPaymentMethodSchema), ctrl.addPaymentMethod);
 router.delete('/payment-methods/:id',           ctrl.deletePaymentMethod);
 router.patch('/payment-methods/:id/set-default', ctrl.setDefaultPaymentMethod);
 router.get('/balances',                         ctrl.getBalances);
 router.get('/transactions',                     ctrl.listTransactions);
+router.get('/earnings',                         ctrl.getEarnings);
+router.get('/profile/referral',                ctrl.getReferralProfile);
+
+router.post('/change-password/verify', validate(changePasswordVerifySchema), ctrl.verifyPassword);
+router.post('/change-password/confirm', validate(changePasswordConfirmSchema), ctrl.changePassword);
 
 module.exports = router;

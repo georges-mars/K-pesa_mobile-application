@@ -2,6 +2,7 @@
 
 const { Pool } = require('pg');
 const logger = require('./logger');
+const resolveDbSsl = require('./db-ssl');
 
 const pool = new Pool({
   host:     process.env.DB_HOST,
@@ -12,7 +13,7 @@ const pool = new Pool({
   max:      20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: resolveDbSsl(),
 });
 
 pool.on('error', (err) => {

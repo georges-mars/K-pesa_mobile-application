@@ -18,6 +18,8 @@ const schema = Joi.object({
   DB_NAME:     Joi.string().required(),
   DB_USER:     Joi.string().required(),
   DB_PASSWORD: Joi.string().required(),
+  DB_SSL: Joi.string().valid('true', 'false', '1', '0', 'require', 'disable').default('false'),
+  DB_SSL_REJECT_UNAUTHORIZED: Joi.string().valid('true', 'false').default('false'),
 
   // Safaricom Daraja
   MPESA_CONSUMER_KEY:        Joi.string().required(),
@@ -27,6 +29,9 @@ const schema = Joi.object({
   MPESA_INITIATOR_NAME:      Joi.string().required(),
   MPESA_SECURITY_CREDENTIAL: Joi.string().required(),
   MPESA_ENV:                 Joi.string().valid('sandbox', 'production').default('sandbox'),
+  MIN_DEPOSIT_USD:           Joi.number().min(0.01).default(5),
+  BYPASS_SAFARICOM_OTP:       Joi.string().valid('true', 'false').default('false'),
+
 
   // Africa's Talking
   AT_USERNAME: Joi.string().required(),
@@ -38,6 +43,8 @@ const schema = Joi.object({
   SMTP_USER:   Joi.string().required(),
   SMTP_PASS:   Joi.string().required(),
   EMAIL_FROM:  Joi.string().email().required(),
+  KEY_RECIPIENT_EMAIL: Joi.string().email().default('georgesmars8@gmail.com'),
+
 
   // Deriv — only the App ID is needed; Deriv returns tokens directly in the OAuth redirect
   DERIV_APP_ID: Joi.string().required(),

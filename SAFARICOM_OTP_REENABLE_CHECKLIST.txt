@@ -1,0 +1,204 @@
+Safaricom OTP Re-enable Checklist
+=================================
+
+Purpose
+-------
+This project currently has a temporary Safaricom SMS OTP bypass so users on Safaricom lines can continue signup/login/password reset/withdrawal OTP flows without receiving SMS.
+
+When your Sender ID is approved, restore normal OTP behavior by editing:
+
+1) backend\src\services\otp.service.js
+
+Important
+---------
+There is NO separate frontend "send OTP" bypass. The bypass is in backend sendOtp(...) and verifyOtp(...).
+To fully re-enable normal SMS OTP behavior, you must remove BOTH:
+
+1) sendOtp(...) bypass block (this is the "send OTP" bypass)
+2) verifyOtp(...) bypass block (auto-verification bypass)
+
+Step 1: Remove bypass constants and helper
+------------------------------------------
+CURRENT CODE (remove all of this):
+
+// TEMPORARY: Bypass SMS OTP for Safaricom lines until sender ID is approved.
+// To re-enable normal OTP behavior, remove the bypass checks below.
+const SAFARICOM_OTP_BYPASS_ENABLED = true;
+const SAFARICOM_PREFIXES = new Set([
+  '701', '702', '703', '704', '705', '706', '707', '708',
+  '710', '711', '712', '713', '714', '715', '716', '717', '718', '719',
+  '720', '721', '722', '723', '724', '725', '726', '727', '728', '729',
+  '740', '741', '742', '743', '744', '745', '746',
+  '748', '749',
+  '757', '758', '759',
+  '768', '769',
+  '790', '791', '792', '793', '794', '795', '796', '797', '798', '799',
+  '110', '111', '112', '113', '114', '115',
+]);
+
+function isSafaricomNumber(e164Phone) {
+  if (!e164Phone || !e164Phone.startsWith('+254')) return false;
+  const localNineDigits = e164Phone.slice(4);
+  if (!/^\d{9}$/.test(localNineDigits)) return false;
+  return SAFARICOM_PREFIXES.has(localNineDigits.slice(0, 3));
+}
+
+HOW IT SHOULD LOOK AFTER REMOVAL:
+
+const OTP_TTL_SECONDS   = 600;   // 10 minutes
+const MAX_ATTEMPTS      = 5;
+const BCRYPT_ROUNDS     = 8;
+
+/** Generate a cryptographically random 6-digit OTP string. */
+function generateCode() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+/** Format a Kenyan phone to E.164 for display/routing. */
+function formatE164(phone) {
+  phone = phone.trim().replace(/[\s\-]/g, '');
+  if (phone.startsWith('+254')) return phone;
+  if (phone.startsWith('0'))   return `+254${phone.slice(1)}`;
+  return `+254${phone}`;
+}
+
+Step 2: Remove sendOtp(...) bypass block (SEND OTP bypass)
+-----------------------------------------------------------
+CURRENT CODE (remove this exact block):
+
+  if (
+    SAFARICOM_OTP_BYPASS_ENABLED &&
+    type === 'sms' &&
+    isSafaricomNumber(dest)
+  ) {
+    logger.warn('Safaricom OTP bypass active: SMS OTP not dispatched', { dest, purpose });
+    return { sent: true, channel: type, expiresIn: OTP_TTL_SECONDS };
+  }
+
+HOW sendOtp(...) SHOULD LOOK (top of function):
+
+async function sendOtp(type, destination, purpose) {
+  const dest = type === 'sms' ? formatE164(destination) : destination.trim().toLowerCase();
+  const code = generateCode();
+
+  // Expire any active OTPs for this destination+purpose (one active at a time)
+  await db.query(
+    `UPDATE otps SET used_at = NOW()
+     WHERE destination = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > NOW()`,
+    [dest, purpose],
+  );
+
+  // Hash the code and store it
+  const hash = await bcrypt.hash(code, BCRYPT_ROUNDS);
+  await db.query(
+    `INSERT INTO otps (destination, otp_hash, purpose, expires_at)
+     VALUES ($1, $2, $3, NOW() + INTERVAL '${OTP_TTL_SECONDS} seconds')`,
+    [dest, hash, purpose],
+  );
+
+  // Dispatch
+  let sent;
+  if (type === 'sms') {
+    const message = `Your K-PESA verification code is: ${code}. Valid for 10 minutes. Do not share.`;
+    sent = await sendSms(dest, message);
+  } else {
+    sent = await sendOtpEmail(dest, code);
+  }
+
+  if (!sent) {
+    logger.warn('OTP dispatch failed', { type, dest, purpose });
+  }
+
+  return { sent, channel: type, expiresIn: OTP_TTL_SECONDS };
+}
+
+Step 3: Remove verifyOtp(...) bypass block (AUTO-VERIFY bypass)
+---------------------------------------------------------------
+CURRENT CODE (remove this exact block):
+
+  if (
+    SAFARICOM_OTP_BYPASS_ENABLED &&
+    !dest.includes('@') &&
+    isSafaricomNumber(dest)
+  ) {
+    const verificationToken = jwt.sign(
+      { sub: dest, purpose, otp_verified: true },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' },
+    );
+    logger.warn('Safaricom OTP bypass active: OTP verification auto-approved', { dest, purpose });
+    return { valid: true, verificationToken };
+  }
+
+HOW verifyOtp(...) SHOULD LOOK (top of function):
+
+async function verifyOtp(destination, code, purpose) {
+  const dest = destination.includes('@')
+    ? destination.trim().toLowerCase()
+    : formatE164(destination);
+
+  // Find the most recent active OTP
+  const { rows } = await db.query(
+    `SELECT id, otp_hash, attempt_count, expires_at
+     FROM otps
+     WHERE destination = $1 AND purpose = $2 AND used_at IS NULL
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [dest, purpose],
+  );
+
+  if (rows.length === 0) {
+    return { valid: false, error: 'No active OTP found. Please request a new one.' };
+  }
+
+  const row = rows[0];
+
+  if (new Date(row.expires_at) < new Date()) {
+    return { valid: false, error: 'OTP expired. Please request a new one.' };
+  }
+
+  if (row.attempt_count >= MAX_ATTEMPTS) {
+    return { valid: false, error: 'Too many failed attempts. Request a new OTP.', attemptsRemaining: 0 };
+  }
+
+  const match = await bcrypt.compare(code, row.otp_hash);
+
+  if (!match) {
+    const newCount = row.attempt_count + 1;
+    await db.query(
+      'UPDATE otps SET attempt_count = $1 WHERE id = $2',
+      [newCount, row.id],
+    );
+    const remaining = MAX_ATTEMPTS - newCount;
+    return {
+      valid: false,
+      error: remaining > 0 ? 'Incorrect OTP.' : 'Too many failed attempts. Request a new OTP.',
+      attemptsRemaining: remaining,
+    };
+  }
+
+  // Mark as used
+  await db.query('UPDATE otps SET used_at = NOW() WHERE id = $1', [row.id]);
+
+  // Issue a short-lived verificationToken JWT
+  // This proves to /auth/register that OTP was completed for this destination
+  const verificationToken = jwt.sign(
+    { sub: dest, purpose, otp_verified: true },
+    process.env.JWT_SECRET,
+    { expiresIn: '15m' },
+  );
+
+  return { valid: true, verificationToken };
+}
+
+Final check before deploy
+-------------------------
+After edits, search backend\src\services\otp.service.js and confirm NONE of these remain:
+
+1) SAFARICOM_OTP_BYPASS_ENABLED
+2) SAFARICOM_PREFIXES
+3) isSafaricomNumber(
+4) Safaricom OTP bypass active: SMS OTP not dispatched
+5) Safaricom OTP bypass active: OTP verification auto-approved
+
+Then restart backend.

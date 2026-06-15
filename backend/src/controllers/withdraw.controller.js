@@ -4,12 +4,14 @@ const db     = require('../config/database');
 const mpesa  = require('../services/mpesa.service');
 const forex  = require('../services/forex.service');
 const deriv  = require('../services/deriv.service');
+const { normalizeKenyanPhone } = require('../services/phone.service');
 const logger = require('../config/logger');
 
 async function initiate(req, res, next) {
   try {
     const { amountUsd, sourceType, mpesaPhone } = req.body;
     const userId = req.user.id;
+    const normalizedPhone = normalizeKenyanPhone(mpesaPhone);
 
     // Check live balance (skip balance check for binance — not integrated yet)
     if (sourceType !== 'binance') {
@@ -37,13 +39,13 @@ async function initiate(req, res, next) {
          (user_id, type, status, amount_kes, amount_usd, exchange_rate, mpesa_phone, destination_type)
        VALUES ($1,'withdrawal','pending',$2,$3,$4,$5,$6)
        RETURNING id`,
-      [userId, amountKes, amountUsd, exchangeRate, mpesaPhone, sourceType],
+      [userId, amountKes, amountUsd, exchangeRate, normalizedPhone, sourceType],
     );
     const transactionId = rows[0].id;
 
     let conversationId;
     try {
-      const result = await mpesa.b2cPay(mpesaPhone, amountKes, transactionId);
+      const result = await mpesa.b2cPay(normalizedPhone, amountKes, transactionId);
       conversationId = result.conversationId;
     } catch (err) {
       await db.query(`UPDATE transactions SET status='failed', failure_reason=$1 WHERE id=$2`, [err.message, transactionId]);

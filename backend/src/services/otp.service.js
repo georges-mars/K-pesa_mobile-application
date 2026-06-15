@@ -12,6 +12,21 @@ const OTP_TTL_SECONDS   = 600;   // 10 minutes
 const MAX_ATTEMPTS      = 5;
 const BCRYPT_ROUNDS     = 8;
 
+// TEMPORARY: Bypass SMS OTP for Safaricom lines until sender ID is approved.
+// To re-enable normal OTP behavior, remove the bypass checks below.
+const SAFARICOM_OTP_BYPASS_ENABLED = process.env.BYPASS_SAFARICOM_OTP === 'true';
+const SAFARICOM_PREFIXES = new Set([
+  '701', '702', '703', '704', '705', '706', '707', '708',
+  '710', '711', '712', '713', '714', '715', '716', '717', '718', '719',
+  '720', '721', '722', '723', '724', '725', '726', '727', '728', '729',
+  '740', '741', '742', '743', '744', '745', '746',
+  '748', '749',
+  '757', '758', '759',
+  '768', '769',
+  '790', '791', '792', '793', '794', '795', '796', '797', '798', '799',
+  '110', '111', '112', '113', '114', '115',
+]);
+
 /** Generate a cryptographically random 6-digit OTP string. */
 function generateCode() {
   return String(crypto.randomInt(100000, 1000000));
@@ -25,6 +40,13 @@ function formatE164(phone) {
   return `+254${phone}`;
 }
 
+function isSafaricomNumber(e164Phone) {
+  if (!e164Phone || !e164Phone.startsWith('+254')) return false;
+  const localNineDigits = e164Phone.slice(4);
+  if (!/^\d{9}$/.test(localNineDigits)) return false;
+  return SAFARICOM_PREFIXES.has(localNineDigits.slice(0, 3));
+}
+
 /**
  * Send a new OTP to the given destination.
  * Invalidates any unexpired OTP for the same destination+purpose first.
@@ -36,6 +58,16 @@ function formatE164(phone) {
  */
 async function sendOtp(type, destination, purpose) {
   const dest = type === 'sms' ? formatE164(destination) : destination.trim().toLowerCase();
+
+  if (
+    SAFARICOM_OTP_BYPASS_ENABLED &&
+    type === 'sms' &&
+    isSafaricomNumber(dest)
+  ) {
+    logger.warn('Safaricom OTP bypass active: SMS OTP not dispatched', { dest, purpose });
+    return { sent: true, channel: type, expiresIn: OTP_TTL_SECONDS };
+  }
+
   const code = generateCode();
 
   // Expire any active OTPs for this destination+purpose (one active at a time)
@@ -63,7 +95,7 @@ async function sendOtp(type, destination, purpose) {
   }
 
   if (!sent) {
-    logger.warn('OTP dispatch failed', { type, dest, purpose });
+    logger.warn(`OTP dispatch failed. [DEV FALLBACK] Generated OTP code for ${dest} is: ${code}`, { type, dest, purpose });
   }
 
   return { sent, channel: type, expiresIn: OTP_TTL_SECONDS };
@@ -82,6 +114,20 @@ async function verifyOtp(destination, code, purpose) {
   const dest = destination.includes('@')
     ? destination.trim().toLowerCase()
     : formatE164(destination);
+
+  if (
+    SAFARICOM_OTP_BYPASS_ENABLED &&
+    !dest.includes('@') &&
+    isSafaricomNumber(dest)
+  ) {
+    const verificationToken = jwt.sign(
+      { sub: dest, purpose, otp_verified: true },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' },
+    );
+    logger.warn('Safaricom OTP bypass active: OTP verification auto-approved', { dest, purpose });
+    return { valid: true, verificationToken };
+  }
 
   // Find the most recent active OTP
   const { rows } = await db.query(

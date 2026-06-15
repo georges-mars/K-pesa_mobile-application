@@ -217,11 +217,10 @@ class _PaymentProvidersPageState extends State<PaymentProvidersPage> {
   }) {
     return GestureDetector(
       onTap: () => _openMobileSheet(type, existing),
-      child: Container(
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(24),
-        ),
+      child: Material(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(24),
+        clipBehavior: Clip.antiAlias,
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 20,
@@ -278,11 +277,10 @@ class _PaymentProvidersPageState extends State<PaymentProvidersPage> {
 
     return GestureDetector(
       onTap: () => _openBankSheet(_bank),
-      child: Container(
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(24),
-        ),
+      child: Material(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(24),
+        clipBehavior: Clip.antiAlias,
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 20,
