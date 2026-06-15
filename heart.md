@@ -133,5 +133,5 @@ sequenceDiagram
   - Discovered that outbound TCP SMTP ports (587, 465) are completely blocked/timed out on the host network/ISP, preventing standard SMTP transport.
   - Implemented secure fallback logging inside `backend/src/services/otp.service.js` and `backend/src/services/email.service.js` to log generated OTP and referral codes to the terminal console when email dispatch fails, allowing local development and password resets to proceed seamlessly.
 
-
-
+* **2026-06-15**: Fixed Ngrok HTML warning interception bug by adding `ngrok-skip-browser-warning` to background refresh endpoints (`_tryRefresh` in `api_service.dart`).
+* **2026-06-15**: Fixed password reset flows and OTP dispatch: deduplicated phone number options UI (`change_password_flow.dart`) by normalizing formats, expanded SMS OTP bypass testing logic to cover all phone carriers in `otp.service.js`, and fixed the database profile destination check in `user.service.js` to correctly match local `07` phone formats against E.164 verification tokens.

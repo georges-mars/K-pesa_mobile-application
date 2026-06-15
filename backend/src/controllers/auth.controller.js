@@ -67,9 +67,11 @@ async function forgotPassword(req, res, next) {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required.' });
 
-    await authService.forgotPassword(email);
-    // Send OTP regardless of whether email exists (to avoid user enumeration)
-    await otpService.sendOtp('email', email, 'password_reset').catch(() => {});
+    const result = await authService.forgotPassword(email);
+    // Send OTP only if email exists, but return success regardless to avoid user enumeration
+    if (result.found) {
+      await otpService.sendOtp('email', email, 'password_reset').catch(() => {});
+    }
 
     res.json({ message: 'If an account with that email exists, a reset code has been sent.' });
   } catch (err) {

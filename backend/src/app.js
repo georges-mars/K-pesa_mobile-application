@@ -22,7 +22,7 @@ const adminRoutes     = require('./routes/admin.routes');
 const app = express();
 
 // ── Security headers ──────────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({ contentSecurityPolicy: false }));
 
 // ── CORS — allow requests from the Flutter app (any origin in dev) ────────────
 app.use(cors({

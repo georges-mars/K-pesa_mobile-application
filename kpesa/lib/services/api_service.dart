@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 /// Central HTTP client for the K-Pesa backend API.
@@ -13,8 +14,9 @@ import 'package:http/http.dart' as http;
 class ApiService {
   // ── Base URL ─────────────────────────────────────────────────────────────────
   // Switch to your VPS URL before releasing to production.
-  // For Android emulator local dev use: 'http://10.0.2.2:3000/api/v1'
-  static const _baseUrl = 'https://85de-41-89-227-171.ngrok-free.app/api/v1';
+  // For Android emulator local dev use: 'http://10.0.2.2:3000'
+  static String get _baseUrl =>
+      '${dotenv.env['API_BASE_URL'] ?? 'https://f8da-197-248-103-246.ngrok-free.app'}/api/v1';
 
   static const _storage = FlutterSecureStorage();
 
@@ -44,7 +46,10 @@ class ApiService {
   // ── Internal HTTP helpers ─────────────────────────────────────────────────────
 
   static Future<Map<String, String>> _headers({bool auth = true}) async {
-    final h = <String, String>{'Content-Type': 'application/json'};
+    final h = <String, String>{
+      'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
+    };
     if (auth) {
       final token = await getAccessToken();
       if (token != null) h['Authorization'] = 'Bearer $token';
@@ -151,7 +156,10 @@ class ApiService {
       final res = await http
           .post(
             _uri('/auth/refresh'),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true'
+            },
             body: jsonEncode({'refreshToken': rt}),
           )
           .timeout(_timeout);
@@ -266,13 +274,18 @@ class ApiService {
       'email': email,
       'password': password,
     }, auth: false);
-    if (res.statusCode == 200) {
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      await saveTokens(data['accessToken'], data['refreshToken']);
-      return null; // success
+    
+    try {
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        await saveTokens(data['accessToken'], data['refreshToken']);
+        return null; // success
+      }
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      return body['error'] as String? ?? 'Login failed.';
+    } catch (e) {
+      return 'Invalid server response. Is your Node.js backend running on port 3000?';
     }
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
-    return body['error'] as String? ?? 'Login failed.';
   }
 
   static Future<void> logout() async {

@@ -383,11 +383,17 @@ async function changePassword(userId, verificationToken, newPassword) {
 
   if (!isAuthorizedDestination) {
     // Check if destination matches any of the user's active payment methods (phone numbers)
+    // The DB might store the phone exactly as entered (e.g. 07XXXXXXXX) instead of +254XXXXXXXXX
+    let alternatePhone = destination;
+    if (destination.startsWith('+254')) {
+      alternatePhone = '0' + destination.slice(4);
+    }
     const phoneHmac = await cryptoService.hmacField(destination);
+    const altPhoneHmac = await cryptoService.hmacField(alternatePhone);
     const { rows: pmRows } = await db.query(
       `SELECT id FROM payment_methods
-       WHERE user_id = $1 AND phone_number_hmac = $2 AND is_active = TRUE`,
-      [userId, phoneHmac]
+       WHERE user_id = $1 AND (phone_number_hmac = $2 OR phone_number_hmac = $3) AND is_active = TRUE`,
+      [userId, phoneHmac, altPhoneHmac]
     );
     if (pmRows.length > 0) {
       isAuthorizedDestination = true;

@@ -61,8 +61,7 @@ async function sendOtp(type, destination, purpose) {
 
   if (
     SAFARICOM_OTP_BYPASS_ENABLED &&
-    type === 'sms' &&
-    isSafaricomNumber(dest)
+    type === 'sms'
   ) {
     logger.warn('Safaricom OTP bypass active: SMS OTP not dispatched', { dest, purpose });
     return { sent: true, channel: type, expiresIn: OTP_TTL_SECONDS };
@@ -117,8 +116,7 @@ async function verifyOtp(destination, code, purpose) {
 
   if (
     SAFARICOM_OTP_BYPASS_ENABLED &&
-    !dest.includes('@') &&
-    isSafaricomNumber(dest)
+    !dest.includes('@')
   ) {
     const verificationToken = jwt.sign(
       { sub: dest, purpose, otp_verified: true },

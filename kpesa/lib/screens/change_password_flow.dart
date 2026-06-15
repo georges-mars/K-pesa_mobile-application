@@ -259,7 +259,11 @@ class _ChangePasswordFlowPageState extends State<ChangePasswordFlowPage> {
         if (type == 'mpesa' || type == 'airtel') {
           final phone = m['phone_number'] as String?;
           if (phone != null && phone.trim().isNotEmpty) {
-            uniquePhones.add(phone.trim());
+            String norm = phone.trim();
+            if (norm.startsWith('+254')) {
+              norm = '0${norm.substring(4)}';
+            }
+            uniquePhones.add(norm);
           }
         }
       }
